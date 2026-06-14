@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MD Browser</title>
+  <!-- Marked.js for Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <style>
+    :root {
+      --sidebar-width: 280px;
+      --sidebar-bg: #1e1e2e;
+      --sidebar-text: #cdd6f4;
+      --sidebar-hover: #313244;
+      --sidebar-active: #45475a;
+      --sidebar-accent: #89b4fa;
+      --content-bg: #ffffff;
+      --content-text: #1e1e2e;
+      --border-color: #e0e0e0;
+      --code-bg: #f5f5f5;
+      --link-color: #1e66f5;
+      --heading-color: #1e1e2e;
+      --table-header-bg: #f0f0f5;
+      --table-border: #d0d0d0;
+      --blockquote-border: #89b4fa;
+      --blockquote-bg: #f8f9ff;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--content-bg);
+      color: var(--content-text);
+    }
+
+    /* ===== Sidebar ===== */
+    #sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--sidebar-bg);
+      color: var(--sidebar-text);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid rgba(255,255,255,0.05);
+    }
+
+    #sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    #sidebar-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--sidebar-accent);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    #dir-switch {
+      display: flex;
+      gap: 4px;
+    }
+
+    #dir-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      padding: 6px 8px;
+      color: var(--sidebar-text);
+      font-size: 12px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #dir-input:focus {
+      border-color: var(--sidebar-accent);
+    }
+
+    #dir-input::placeholder {
+      color: #6c7086;
+    }
+
+    #dir-go-btn {
+      background: var(--sidebar-accent);
+      color: var(--sidebar-bg);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+
+    #dir-go-btn:hover {
+      opacity: 0.85;
+    }
+
+    #dir-go-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #dir-name {
+      font-size: 11px;
+      color: #a6adc8;
+      margin-top: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #dir-error {
+      font-size: 11px;
+      color: #f38ba8;
+      margin-top: 4px;
+      display: none;
+    }
+
+    #tree-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    #tree-container::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #tree-container::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.15);
+      border-radius: 2px;
+    }
+
+    .tree-item {
+      user-select: none;
+    }
+
+    .tree-folder {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #bac2de;
+      transition: background 0.15s;
+    }
+
+    .tree-folder:hover {
+      background: var(--sidebar-hover);
+    }
+
+    .tree-folder .icon {
+      margin-right: 6px;
+      font-size: 10px;
+      transition: transform 0.2s;
+      display: inline-block;
+      width: 14px;
+      text-align: center;
+    }
+
+    .tree-folder .icon.expanded {
+      transform: rotate(90deg);
+    }
+
+    .tree-folder .folder-icon {
+      margin-right: 6px;
+      font-size: 14px;
+    }
+
+    .tree-children {
+      display: none;
+    }
+
+    .tree-children.expanded {
+      display: block;
+    }
+
+    .tree-file {
+      display: flex;
+      align-items: center;
+      padding: 5px 12px 5px 32px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--sidebar-text);
+      transition: background 0.15s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tree-file:hover {
+      background: var(--sidebar-hover);
+    }
+
+    .tree-file.active {
+      background: var(--sidebar-active);
+      color: var(--sidebar-accent);
+      border-left: 3px solid var(--sidebar-accent);
+      padding-left: 29px;
+    }
+
+    .tree-file .file-icon {
+      margin-right: 8px;
+      font-size: 12px;
+      opacity: 0.6;
+    }
+
+    /* ===== Main Content ===== */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #topbar {
+      height: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      background: #fafafa;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 13px;
+      color: #666;
+    }
+
+    #breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    #breadcrumb span {
+      color: #999;
+    }
+
+    #breadcrumb .current {
+      color: var(--content-text);
+      font-weight: 500;
+    }
+
+    #content-wrapper {
+      flex: 1;
+      overflow-y: auto;
+      padding: 40px;
+    }
+
+    #content {
+      max-width: 860px;
+      margin: 0 auto;
+      line-height: 1.8;
+    }
+
+    /* ===== Welcome Screen ===== */
+    #welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #999;
+      text-align: center;
+    }
+
+    #welcome .icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+
+    #welcome h2 {
+      font-size: 20px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    #welcome p {
+      font-size: 14px;
+    }
+
+    /* ===== Markdown Styles ===== */
+    #content h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--heading-color);
+      margin: 0 0 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    #content h2 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--heading-color);
+      margin: 36px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #content h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--heading-color);
+      margin: 28px 0 12px;
+    }
+
+    #content h4 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #444;
+      margin: 24px 0 8px;
+    }
+
+    #content p {
+      margin: 12px 0;
+    }
+
+    #content a {
+      color: var(--link-color);
+      text-decoration: none;
+    }
+
+    #content a:hover {
+      text-decoration: underline;
+    }
+
+    #content code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.88em;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    #content pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+      line-height: 1.5;
+    }
+
+    #content pre code {
+      background: none;
+      padding: 0;
+      font-size: 13px;
+    }
+
+    #content blockquote {
+      border-left: 4px solid var(--blockquote-border);
+      background: var(--blockquote-bg);
+      padding: 12px 16px;
+      margin: 16px 0;
+      border-radius: 0 6px 6px 0;
+    }
+
+    #content blockquote p {
+      margin: 4px 0;
+    }
+
+    #content ul, #content ol {
+      padding-left: 24px;
+      margin: 12px 0;
+    }
+
+    #content li {
+      margin: 4px 0;
+    }
+
+    #content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    #content thead th {
+      background: var(--table-header-bg);
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 12px;
+      border: 1px solid var(--table-border);
+    }
+
+    #content tbody td {
+      padding: 8px 12px;
+      border: 1px solid var(--table-border);
+    }
+
+    #content tbody tr:hover {
+      background: #f8f9fa;
+    }
+
+    #content hr {
+      border: none;
+      border-top: 1px solid var(--border-color);
+      margin: 32px 0;
+    }
+
+    #content img {
+      max-width: 100%;
+      border-radius: 6px;
+    }
+
+    /* ===== Loading ===== */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+    }
+
+    .loading::after {
+      content: '';
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--sidebar-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 768px) {
+      #sidebar {
+        position: absolute;
+        left: -280px;
+        height: 100%;
+        z-index: 100;
+        transition: left 0.3s;
+      }
+
+      #sidebar.open {
+        left: 0;
+      }
+
+      #content-wrapper {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h2>📖 MD Browser</h2>
+      <div id="dir-switch">
+        <input type="text" id="dir-input" placeholder="输入目录路径，如 D:\docs" spellcheck="false">
+        <button id="dir-go-btn" onclick="switchDirectory()">打开</button>
+      </div>
+      <div id="dir-name"></div>
+      <div id="dir-error"></div>
+    </div>
+    <div id="tree-container"></div>
+  </div>
+
+  <div id="main">
+    <div id="topbar">
+      <div id="breadcrumb">
+        <span>Select a file from the sidebar</span>
+      </div>
+    </div>
+    <div id="content-wrapper">
+      <div id="welcome">
+        <div class="icon">📚</div>
+        <h2>Markdown Browser</h2>
+        <p>在左侧输入目录路径来加载 Markdown 文件</p>
+        <p style="margin-top: 8px; font-size: 12px; color: #bbb;">例如: <code>D:\claude\001-network-protocols</code></p>
+      </div>
+      <div id="content" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===== State =====
+    let currentFile = null;
+    let treeData = null;
+
+    // ===== Configure marked.js =====
+    marked.setOptions({
+      breaks: false,
+      gfm: true
+    });
+
+    // Custom renderer for internal links
+    const renderer = new marked.Renderer();
+    renderer.link = function(token) {
+      // marked v12+: receives {href, title, text, tokens}
+      const href = (typeof token === 'object' && token !== null) ? (token.href || '') : '';
+      const title = (typeof token === 'object' && token !== null) ? (token.title || '') : '';
+      const text = (typeof token === 'object' && token !== null) ? (token.text || '') : '';
+
+      if (typeof href === 'string' && href.endsWith('.md') && !href.startsWith('http')) {
+        return `<a href="#" onclick="navigateToLink('${href}'); return false;" title="${title}">${text}</a>`;
+      }
+      if (typeof href === 'string' && href.startsWith('http')) {
+        return `<a href="${href}" target="_blank" rel="noopener" title="${title}">${text} ↗</a>`;
+      }
+      return `<a href="${href}" title="${title}">${text}</a>`;
+    };
+
+    // Code renderer with syntax highlighting
+    renderer.code = function(token) {
+      const code = (typeof token === 'object') ? (token.text || '') : token;
+      const lang = (typeof token === 'object') ? (token.lang || '') : '';
+      let highlighted;
+      if (lang && hljs.getLanguage(lang)) {
+        highlighted = hljs.highlight(code, { language: lang }).value;
+      } else {
+        highlighted = hljs.highlightAuto(code).value;
+      }
+      return `<pre><code class="hljs${lang ? ' language-' + lang : ''}">${highlighted}</code></pre>`;
+    };
+
+    marked.use({ renderer });
+
+    // ===== API Functions =====
+    async function fetchTree() {
+      const res = await fetch('/api/tree');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    }
+
+    async function fetchFile(path) {
+      const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+      if (!res.ok) {
+        try {
+          const err = await res.json();
+          throw new Error(err.error || res.statusText);
+        } catch (e) {
+          throw new Error(await res.text());
+        }
+      }
+      return await res.json();
+    }
+
+    // ===== Directory Switching =====
+    async function switchDirectory() {
+      const input = document.getElementById('dir-input');
+      const btn = document.getElementById('dir-go-btn');
+      const errorEl = document.getElementById('dir-error');
+      const dirPath = input.value.trim();
+
+      if (!dirPath) return;
+
+      errorEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = '...';
+
+      try {
+        const res = await fetch(`/api/switch?dir=${encodeURIComponent(dirPath)}`);
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || res.statusText);
+        }
+        const info = await res.json();
+
+        // Reload tree
+        await loadTree();
+
+        // Update input placeholder to current path
+        input.value = '';
+        input.placeholder = info.path;
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '打开';
+      }
+    }
+
+    // Enter key triggers switch
+    document.getElementById('dir-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') switchDirectory();
+    });
+
+    // ===== Tree Rendering =====
+    function renderTree(node, container, depth = 0) {
+      if (node.type === 'directory') {
+        const item = document.createElement('div');
+        item.className = 'tree-item';
+
+        const folder = document.createElement('div');
+        folder.className = 'tree-folder';
+        folder.style.paddingLeft = `${12 + depth * 16}px`;
+        folder.innerHTML = `
+          <span class="icon">▶</span>
+          <span class="folder-icon">📁</span>
+          <span>${node.name}</span>
+        `;
+
+        const children = document.createElement('div');
+        children.className = 'tree-children';
+
+        // Auto-expand first level
+        if (depth === 0) {
+          children.classList.add('expanded');
+          folder.querySelector('.icon').classList.add('expanded');
+          folder.querySelector('.folder-icon').textContent = '📂';
+        }
+
+        folder.addEventListener('click', () => {
+          const isExpanded = children.classList.contains('expanded');
+          children.classList.toggle('expanded');
+          folder.querySelector('.icon').classList.toggle('expanded');
+          folder.querySelector('.folder-icon').textContent = isExpanded ? '📁' : '📂';
+        });
+
+        item.appendChild(folder);
+
+        // Render children (files first shown, then subfolders)
+        if (node.children) {
+          // Sort: files first (README at top), then directories
+          const files = node.children.filter(c => c.type === 'file');
+          const dirs = node.children.filter(c => c.type === 'directory');
+
+          // Put README first among files
+          const readme = files.find(f => f.filename === 'README.md');
+          const otherFiles = files.filter(f => f.filename !== 'README.md');
+
+          if (readme) renderTree(readme, children, depth + 1);
+          otherFiles.forEach(child => renderTree(child, children, depth + 1));
+          dirs.forEach(child => renderTree(child, children, depth + 1));
+        }
+
+        item.appendChild(children);
+        container.appendChild(item);
+      } else if (node.type === 'file') {
+        const file = document.createElement('div');
+        file.className = 'tree-file';
+        file.style.paddingLeft = `${32 + depth * 16}px`;
+        file.dataset.path = node.path;
+        file.innerHTML = `
+          <span class="file-icon">📄</span>
+          <span>${node.name}</span>
+        `;
+
+        file.addEventListener('click', () => loadFile(node.path));
+        container.appendChild(file);
+      }
+    }
+
+    // ===== File Loading =====
+    async function loadFile(path) {
+      // Update active state in sidebar
+      document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
+      const activeEl = document.querySelector(`.tree-file[data-path="${path}"]`);
+      if (activeEl) activeEl.classList.add('active');
+
+      // Show loading
+      const content = document.getElementById('content');
+      const welcome = document.getElementById('welcome');
+      content.style.display = 'none';
+      welcome.style.display = 'none';
+
+      const wrapper = document.getElementById('content-wrapper');
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'loading';
+      loadingDiv.id = 'loading';
+      wrapper.appendChild(loadingDiv);
+
+      try {
+        const data = await fetchFile(path);
+        currentFile = path;
+
+        // Update breadcrumb
+        const parts = path.split('/');
+        const breadcrumb = document.getElementById('breadcrumb');
+        breadcrumb.innerHTML = parts.map((part, i) => {
+          if (i === parts.length - 1) {
+            return `<span class="current">${part}</span>`;
+          }
+          return `<span>${part}</span><span>/</span>`;
+        }).join('');
+
+        // Render markdown
+        content.innerHTML = marked.parse(data.content);
+        content.style.display = 'block';
+
+        // Scroll to top
+        wrapper.scrollTop = 0;
+
+        // Re-highlight code blocks
+        content.querySelectorAll('pre code').forEach(block => {
+          hljs.highlightElement(block);
+        });
+      } catch (err) {
+        content.innerHTML = `<h1>Error</h1><p>${err.message}</p>`;
+        content.style.display = 'block';
+      } finally {
+        const loading = document.getElementById('loading');
+        if (loading) loading.remove();
+      }
+    }
+
+    // ===== Link Navigation =====
+    function navigateToLink(href) {
+      if (!currentFile) return;
+
+      // Resolve relative path from current file
+      const currentDir = currentFile.includes('/')
+        ? currentFile.substring(0, currentFile.lastIndexOf('/'))
+        : '';
+      let targetPath;
+
+      if (href.startsWith('../')) {
+        // Go up from current directory
+        const parts = currentDir.split('/').filter(Boolean);
+        const upCount = (href.match(/\.\.\//g) || []).length;
+        for (let i = 0; i < upCount && parts.length > 0; i++) {
+          parts.pop();
+        }
+        const remaining = href.replace(/(\.\.\/)+/, '');
+        targetPath = [...parts, remaining].join('/');
+      } else if (href.startsWith('./')) {
+        targetPath = currentDir ? `${currentDir}/${href.substring(2)}` : href.substring(2);
+      } else {
+        targetPath = currentDir ? `${currentDir}/${href}` : href;
+      }
+
+      // Normalize path
+      targetPath = targetPath.replace(/\/+/g, '/');
+
+      loadFile(targetPath);
+    }
+
+    // ===== Tree Loading =====
+    async function loadTree() {
+      try {
+        treeData = await fetchTree();
+        document.getElementById('dir-name').textContent = treeData.name;
+        document.title = `MD Browser - ${treeData.name}`;
+
+        const container = document.getElementById('tree-container');
+        container.innerHTML = '';
+        renderTree(treeData, container);
+
+        // Reset content area
+        currentFile = null;
+        document.getElementById('content').style.display = 'none';
+        document.getElementById('welcome').style.display = 'flex';
+        document.getElementById('breadcrumb').innerHTML = '<span>Select a file from the sidebar</span>';
+      } catch (err) {
+        document.getElementById('tree-container').innerHTML = '';
+        throw err;
+      }
+    }
+
+    // ===== Initialization =====
+    async function init() {
+      try {
+        await loadTree();
+      } catch (err) {
+        // No directory selected yet — that's fine, user will use the input
+        document.getElementById('tree-container').innerHTML = '';
+        document.getElementById('dir-name').textContent = '';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
