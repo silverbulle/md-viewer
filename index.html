@@ -865,19 +865,6 @@
       return `<a href="${href}" title="${title}">${text}</a>`;
     };
 
-    // Code renderer with syntax highlighting
-    renderer.code = function(token) {
-      const code = (typeof token === 'object') ? (token.text || '') : token;
-      const lang = (typeof token === 'object') ? (token.lang || '') : '';
-      let highlighted;
-      if (lang && hljs.getLanguage(lang)) {
-        highlighted = hljs.highlight(code, { language: lang }).value;
-      } else {
-        highlighted = hljs.highlightAuto(code).value;
-      }
-      return `<pre><code class="hljs${lang ? ' language-' + lang : ''}">${highlighted}</code></pre>`;
-    };
-
     marked.use({ renderer });
 
     // ===== API Functions =====
@@ -1122,10 +1109,8 @@
         content.innerHTML = marked.parse(data.content);
         content.style.display = 'block';
 
-        // Re-highlight code blocks
-        content.querySelectorAll('pre code').forEach(block => {
-          hljs.highlightElement(block);
-        });
+        // Syntax highlight all code blocks
+        hljs.highlightAll();
 
         // Build TOC from rendered headings
         buildTOC();
