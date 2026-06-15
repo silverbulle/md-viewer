@@ -1,20 +1,20 @@
 # MD Browser — Markdown 文件浏览器
 
-轻量级本地 Markdown 文件浏览器，支持目录树导航和文件间交叉引用链接。
+轻量级本地 Markdown 文件浏览器，面向结构化知识库（如协议文档、笔记集合），支持目录树导航、全文搜索、文档大纲和交叉引用跳转。
 
 ## 快速启动
 
 ### 方式一：双击 exe（推荐）
 
-1. 双击 `md-browser.exe`，浏览器会自动打开
-2. 在左侧输入框输入目录路径，点"打开"
+1. 双击 `md-browser.exe`，浏览器自动打开
+2. 点击 **📂 Open Folder** 选择 Markdown 目录（或输入路径）
 3. 关闭时在终端窗口按 `Ctrl+C`
 
 ```
 md-browser.exe [目录路径]
 
 # 示例
-md-browser.exe                              # 启动后从 UI 选目录
+md-browser.exe                                # 启动后从 UI 选目录
 md-browser.exe D:\docs\001-network-protocols  # 直接打开指定目录
 md-browser.exe --port 3000                    # 指定端口
 ```
@@ -26,30 +26,42 @@ python server.py
 python server.py ../001-network-protocols
 ```
 
-## 构建 exe
+## 功能特性
 
-需要 Python 和 PyInstaller：
+### 目录导航
 
-```bash
-pip install pyinstaller
-build.bat
-```
+| 功能 | 说明 |
+|------|------|
+| **原生文件夹选择器** | 点击 📂 Open Folder 弹出 Windows 目录选择对话框 |
+| **路径输入** | 也可直接输入路径，按 Enter 或点 Go 打开 |
+| **记忆上次目录** | 自动记住上次打开的目录，下次启动直接恢复 |
+| **可折叠目录树** | 文件夹展开/折叠，README 自动置顶 |
 
-生成的 `dist/md-browser.exe` 即为独立可执行文件，可拷贝到任意位置使用。
+### 文档阅读
 
-## 环境要求
+| 功能 | 说明 |
+|------|------|
+| **Markdown 渲染** | GFM 表格、代码语法高亮、ASCII 图表 |
+| **交叉引用跳转** | 点击文档内 `.md` 链接直接跳转到目标文件 |
+| **锚点跳转** | 支持 `file.md#heading` 跨文件锚点和 `#heading` 同页面锚点 |
+| **文档大纲 (Outline)** | 侧边栏 Files/Outline 切换，显示 h1~h4 标题结构，点击跳转 |
 
-| 依赖 | 版本 | 说明 |
-|------|------|------|
-| Python | >= 3.6 | 仅运行 `server.py` 时需要 |
-| PyInstaller | 最新 | 仅构建 exe 时需要 |
-| 浏览器 | 现代浏览器 | Chrome / Edge / Firefox |
+### 搜索
 
-**运行时零依赖** — 后端仅使用 Python 标准库（`http.server`, `pathlib`, `json`, `argparse`, `webbrowser`）。
+| 功能 | 说明 |
+|------|------|
+| **全文模糊搜索** | 搜索所有 MD 文件的文件名和内容，大小写不敏感 |
+| **实时结果** | 输入 2 字符后自动搜索，或按 Enter / 点 Search 手动触发 |
+| **结果高亮** | 匹配文本高亮显示，点击跳转到对应文件和位置 |
 
-前端 JS 库通过 CDN 加载（需联网首次访问，之后浏览器会缓存）：
-- [marked.js](https://marked.js.org/) — Markdown 渲染
-- [highlight.js](https://highlightjs.org/) — 代码高亮
+### 导航控制
+
+| 功能 | 快捷键 | 说明 |
+|------|--------|------|
+| **后退** | `Ctrl + ←` | 返回上一个浏览过的文档 |
+| **前进** | `Ctrl + →` | 前进到下一个文档 |
+| **聚焦搜索** | `Ctrl + K` | 快速聚焦搜索框 |
+| **关闭搜索** | `Esc` | 关闭搜索结果下拉 |
 
 ## 命令行参数
 
@@ -60,22 +72,64 @@ build.bat
 | `--host, -H` | 绑定地址 | localhost |
 | `--no-browser` | 不自动打开浏览器 | false |
 
-## 功能特性
+### 示例
 
-- **双击启动** — exe 自动打开浏览器，无需命令行
-- **目录切换** — 在侧边栏输入任意路径即可切换浏览目录
-- **目录树侧边栏** — 可折叠的目录结构，README 自动置顶
-- **Markdown 渲染** — 支持 GFM 表格、代码高亮、ASCII 图表
-- **交叉引用导航** — 点击文档内的 `.md` 链接直接跳转
-- **路径安全** — 限制在指定目录内，防止路径穿越
+```bash
+# 启动后从 UI 选目录
+python server.py
+
+# 直接打开指定目录
+python server.py ../001-network-protocols
+
+# 指定端口
+python server.py ../002-openstack --port 3000
+
+# 允许局域网内其他设备访问
+python server.py ../001-network-protocols --host 0.0.0.0
+```
+
+## 环境要求
+
+| 依赖 | 版本 | 说明 |
+|------|------|------|
+| Python | >= 3.7 | 仅运行 `server.py` 时需要（3.7+ for `ThreadingHTTPServer`） |
+| PyInstaller | 最新 | 仅构建 exe 时需要 |
+| 浏览器 | Chrome / Edge | 支持 `SHBrowseForFolder` 原生对话框 |
+
+**运行时零依赖** — 后端仅使用 Python 标准库：
+`http.server`, `pathlib`, `json`, `argparse`, `webbrowser`, `ctypes`, `threading`
+
+前端 JS 库通过 CDN 加载（首次需联网，之后浏览器缓存）：
+- [marked.js](https://marked.js.org/) — Markdown 渲染
+- [highlight.js](https://highlightjs.org/) — 代码语法高亮
+
+## 构建 exe
+
+```bash
+pip install pyinstaller
+build.bat
+```
+
+生成的 `dist/md-browser.exe` 为单文件独立可执行程序（约 5.6MB），可拷贝到任意 Windows 机器直接使用，无需安装 Python。
 
 ## 项目结构
 
 ```
 003-md-viewer/
-├── server.py          # Python 后端（API + 静态服务）
+├── server.py          # Python 后端（多线程 HTTP 服务 + API）
 ├── index.html         # 前端 SPA（随 exe 打包）
-├── build.bat          # Windows 构建脚本
+├── build.bat          # Windows 一键构建脚本
 ├── requirements.txt   # 依赖说明（无第三方运行时依赖）
+├── .gitignore
 └── README.md          # 本文件
 ```
+
+## API 接口
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/tree` | GET | 返回当前目录的 MD 文件树结构 |
+| `/api/file?path=...` | GET | 返回指定 MD 文件的内容 |
+| `/api/switch?dir=...` | GET | 切换到指定目录 |
+| `/api/search?q=...` | GET | 全文搜索，返回匹配结果 |
+| `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
