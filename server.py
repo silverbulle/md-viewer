@@ -14,11 +14,53 @@ import socket
 import argparse
 import webbrowser
 import threading
+import ctypes
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 from pathlib import Path
 
 DEFAULT_PORT = 8080
+
+
+def pick_folder():
+    """Open a native Windows folder picker dialog, return selected path or None."""
+    if sys.platform != 'win32':
+        return None
+    try:
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+
+        class BROWSEINFO(ctypes.Structure):
+            _fields_ = [
+                ("hwndOwner", ctypes.c_void_p),
+                ("pidlRoot", ctypes.c_void_p),
+                ("pszDisplayName", ctypes.c_char * 260),
+                ("lpszTitle", ctypes.c_wchar_p),
+                ("ulFlags", ctypes.c_uint),
+                ("lpfn", ctypes.c_void_p),
+                ("lParam", ctypes.c_void_p),
+                ("iImage", ctypes.c_int),
+            ]
+
+        BIF_RETURNONLYFSDIRS = 0x0001
+        BIF_NEWDIALOGSTYLE = 0x0040
+
+        bi = BROWSEINFO()
+        bi.lpszTitle = "Select Markdown Directory"
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+
+        ole32.CoInitialize(None)
+        pidl = shell32.SHBrowseForFolder(ctypes.byref(bi))
+        ole32.CoUninitialize()
+
+        if pidl:
+            path_buf = ctypes.create_unicode_buffer(260)
+            shell32.SHGetPathFromIDListW(pidl, path_buf)
+            shell32.ILFree(pidl)
+            return str(Path(path_buf.value))
+    except Exception:
+        pass
+    return None
 
 
 def get_app_dir():
@@ -150,6 +192,8 @@ class MDHandler(SimpleHTTPRequestHandler):
             self.handle_switch(query)
         elif path == '/api/search':
             self.handle_search(query)
+        elif path == '/api/pick-folder':
+            self.handle_pick_folder()
         elif path == '/' or path == '/index.html':
             self.serve_frontend()
         else:
@@ -209,6 +253,24 @@ class MDHandler(SimpleHTTPRequestHandler):
             "query": q.strip(),
             "total": len(results)
         })
+
+    def handle_pick_folder(self):
+        """Open native folder picker and return selected path."""
+        result = {"path": None}
+
+        def run_dialog():
+            path = pick_folder()
+            if path:
+                result["path"] = path
+
+        t = threading.Thread(target=run_dialog)
+        t.start()
+        t.join(timeout=300)  # Wait up to 5 minutes for user to pick
+
+        if result["path"]:
+            self.send_json({"path": result["path"]})
+        else:
+            self.send_json({"path": None})
 
     def handle_file(self, query):
         """Return MD file content."""

@@ -73,6 +73,38 @@
 
     #dir-switch {
       display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #dir-picker-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 8px;
+      background: var(--sidebar-accent);
+      color: var(--sidebar-bg);
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    #dir-picker-btn:hover {
+      opacity: 0.85;
+    }
+
+    #dir-picker-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #dir-input-row {
+      display: flex;
       gap: 4px;
     }
 
@@ -98,8 +130,8 @@
     }
 
     #dir-go-btn {
-      background: var(--sidebar-accent);
-      color: var(--sidebar-bg);
+      background: rgba(255,255,255,0.12);
+      color: var(--sidebar-text);
       border: none;
       border-radius: 4px;
       padding: 6px 10px;
@@ -642,10 +674,13 @@
 <body>
   <div id="sidebar">
     <div id="sidebar-header">
-      <h2>📖 MD Browser</h2>
+      <h2>MD Browser</h2>
       <div id="dir-switch">
-        <input type="text" id="dir-input" placeholder="输入目录路径，如 D:\docs" spellcheck="false">
-        <button id="dir-go-btn" onclick="switchDirectory()">打开</button>
+        <button id="dir-picker-btn" onclick="pickFolder()">📂 Open Folder</button>
+        <div id="dir-input-row">
+          <input type="text" id="dir-input" placeholder="or type path here..." spellcheck="false">
+          <button id="dir-go-btn" onclick="switchDirectory()">Go</button>
+        </div>
       </div>
       <div id="dir-name"></div>
       <div id="dir-error"></div>
@@ -659,8 +694,8 @@
         <span>Select a file from the sidebar</span>
       </div>
       <div id="nav-buttons">
-        <button class="nav-btn" id="btn-back" onclick="navigateBack()" disabled title="Back (Alt+Left)">&#9664;</button>
-        <button class="nav-btn" id="btn-forward" onclick="navigateForward()" disabled title="Forward (Alt+Right)">&#9654;</button>
+        <button class="nav-btn" id="btn-back" onclick="navigateBack()" disabled title="Back (Ctrl+Left)">&#9664;</button>
+        <button class="nav-btn" id="btn-forward" onclick="navigateForward()" disabled title="Forward (Ctrl+Right)">&#9654;</button>
       </div>
       <div id="search-wrapper">
         <div id="search-input-wrap">
@@ -753,17 +788,13 @@
     }
 
     // ===== Directory Switching =====
-    async function switchDirectory() {
+    async function switchToDir(dirPath) {
       const input = document.getElementById('dir-input');
-      const btn = document.getElementById('dir-go-btn');
       const errorEl = document.getElementById('dir-error');
-      const dirPath = input.value.trim();
 
       if (!dirPath) return;
 
       errorEl.style.display = 'none';
-      btn.disabled = true;
-      btn.textContent = '...';
 
       try {
         const res = await fetch(`/api/switch?dir=${encodeURIComponent(dirPath)}`);
@@ -773,18 +804,45 @@
         }
         const info = await res.json();
 
+        // Save to localStorage
+        localStorage.setItem('md-browser-last-dir', info.path);
+
         // Reload tree
         await loadTree();
 
-        // Update input placeholder to current path
+        // Update input placeholder
         input.value = '';
         input.placeholder = info.path;
       } catch (err) {
         errorEl.textContent = err.message;
         errorEl.style.display = 'block';
+      }
+    }
+
+    async function switchDirectory() {
+      const dirPath = document.getElementById('dir-input').value.trim();
+      if (dirPath) await switchToDir(dirPath);
+    }
+
+    async function pickFolder() {
+      const btn = document.getElementById('dir-picker-btn');
+      const errorEl = document.getElementById('dir-error');
+      errorEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = '⏳ Selecting...';
+
+      try {
+        const res = await fetch('/api/pick-folder');
+        const data = await res.json();
+        if (data.path) {
+          await switchToDir(data.path);
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = 'block';
       } finally {
         btn.disabled = false;
-        btn.textContent = '打开';
+        btn.textContent = '📂 Open Folder';
       }
     }
 
@@ -973,13 +1031,13 @@
       loadFile(navHistory[navIndex]);
     }
 
-    // Alt+Left / Alt+Right shortcuts
+    // Ctrl+Left / Ctrl+Right shortcuts
     document.addEventListener('keydown', (e) => {
-      if (e.altKey && e.key === 'ArrowLeft') {
+      if (e.ctrlKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         navigateBack();
       }
-      if (e.altKey && e.key === 'ArrowRight') {
+      if (e.ctrlKey && e.key === 'ArrowRight') {
         e.preventDefault();
         navigateForward();
       }
@@ -1115,12 +1173,19 @@
 
     // ===== Initialization =====
     async function init() {
+      // Try to restore last opened directory
+      const lastDir = localStorage.getItem('md-browser-last-dir');
+
       try {
         await loadTree();
       } catch (err) {
-        // No directory selected yet — that's fine, user will use the input
         document.getElementById('tree-container').innerHTML = '';
         document.getElementById('dir-name').textContent = '';
+
+        // Auto-open last directory if available
+        if (lastDir) {
+          await switchToDir(lastDir);
+        }
       }
     }
 
