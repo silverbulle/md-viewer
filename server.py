@@ -14,7 +14,7 @@ import socket
 import argparse
 import webbrowser
 import threading
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 from pathlib import Path
 
@@ -313,7 +313,7 @@ def main():
         MDHandler.base_directory = None
 
     # Start server
-    server = HTTPServer((args.host, args.port), MDHandler)
+    server = ThreadingHTTPServer((args.host, args.port), MDHandler)
     url = f"http://{'localhost' if args.host == '0.0.0.0' else args.host}:{args.port}"
 
     print(f"")
