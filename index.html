@@ -1026,8 +1026,8 @@
       currentTab = tab;
       document.getElementById('tab-files').classList.toggle('active', tab === 'files');
       document.getElementById('tab-outline').classList.toggle('active', tab === 'outline');
-      document.getElementById('tree-container').style.display = tab === 'files' ? '' : 'none';
-      document.getElementById('toc-container').style.display = tab === 'outline' ? '' : 'none';
+      document.getElementById('tree-container').style.display = tab === 'files' ? 'block' : 'none';
+      document.getElementById('toc-container').style.display = tab === 'outline' ? 'block' : 'none';
     }
 
     function buildTOC(markdownSource) {
