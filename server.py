@@ -7,6 +7,7 @@ Example: python server.py --port 8080
 """
 
 import os
+import re
 import sys
 import json
 import argparse
@@ -73,6 +74,56 @@ def get_md_tree(base_dir, current_dir=None):
     return result
 
 
+def search_md_files(base_dir, query, max_results=50):
+    """Search all MD files for a query string (case-insensitive fuzzy match)."""
+    base_path = Path(base_dir).resolve()
+    results = []
+    query_lower = query.lower()
+
+    for md_file in sorted(base_path.rglob('*.md'), key=lambda p: p.name.lower()):
+        if len(results) >= max_results:
+            break
+
+        rel_path = md_file.relative_to(base_path).as_posix()
+
+        # 1. Match against filename
+        if query_lower in md_file.stem.lower():
+            results.append({
+                "path": rel_path,
+                "name": md_file.stem,
+                "line": 0,
+                "text": f"[filename] {md_file.name}",
+                "type": "filename"
+            })
+
+        # 2. Match against content
+        try:
+            lines = md_file.read_text(encoding='utf-8').splitlines()
+        except Exception:
+            continue
+
+        for i, line in enumerate(lines, 1):
+            if len(results) >= max_results:
+                break
+            if query_lower in line.lower():
+                # Trim long lines for snippet
+                snippet = line.strip()
+                if len(snippet) > 120:
+                    pos = snippet.lower().find(query_lower)
+                    start = max(0, pos - 50)
+                    end = min(len(snippet), pos + len(query) + 50)
+                    snippet = ('...' if start > 0 else '') + snippet[start:end] + ('...' if end < len(snippet) else '')
+                results.append({
+                    "path": rel_path,
+                    "name": md_file.stem,
+                    "line": i,
+                    "text": snippet,
+                    "type": "content"
+                })
+
+    return results
+
+
 class MDHandler(SimpleHTTPRequestHandler):
     """HTTP request handler with MD file API."""
 
@@ -89,6 +140,8 @@ class MDHandler(SimpleHTTPRequestHandler):
             self.handle_file(query)
         elif path == '/api/switch':
             self.handle_switch(query)
+        elif path == '/api/search':
+            self.handle_search(query)
         elif path == '/' or path == '/index.html':
             self.serve_frontend()
         else:
@@ -129,6 +182,24 @@ class MDHandler(SimpleHTTPRequestHandler):
             "path": str(target),
             "name": target.name,
             "md_count": md_count
+        })
+
+    def handle_search(self, query):
+        """Search all MD files for a query string."""
+        if not self.base_directory:
+            self.send_json({"results": [], "query": "", "total": 0})
+            return
+
+        q = query.get('q', [None])[0]
+        if not q or len(q.strip()) < 2:
+            self.send_json({"results": [], "query": q or "", "total": 0})
+            return
+
+        results = search_md_files(self.base_directory, q.strip())
+        self.send_json({
+            "results": results,
+            "query": q.strip(),
+            "total": len(results)
         })
 
     def handle_file(self, query):

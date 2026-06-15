@@ -243,12 +243,14 @@
       border-bottom: 1px solid var(--border-color);
       font-size: 13px;
       color: #666;
+      position: relative;
     }
 
     #breadcrumb {
       display: flex;
       align-items: center;
       gap: 4px;
+      flex: 1;
     }
 
     #breadcrumb span {
@@ -258,6 +260,121 @@
     #breadcrumb .current {
       color: var(--content-text);
       font-weight: 500;
+    }
+
+    /* ===== Search ===== */
+    #search-wrapper {
+      position: relative;
+      width: 280px;
+      flex-shrink: 0;
+    }
+
+    #search-input {
+      width: 100%;
+      padding: 6px 10px 6px 28px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #search-input:focus {
+      border-color: var(--sidebar-accent);
+      box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.2);
+    }
+
+    #search-input::placeholder {
+      color: #bbb;
+    }
+
+    #search-icon {
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 13px;
+      color: #bbb;
+      pointer-events: none;
+    }
+
+    #search-results {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      max-height: 420px;
+      overflow-y: auto;
+      z-index: 200;
+    }
+
+    #search-results.visible {
+      display: block;
+    }
+
+    #search-results::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #search-results::-webkit-scrollbar-thumb {
+      background: #ddd;
+      border-radius: 2px;
+    }
+
+    .search-result-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.1s;
+    }
+
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-result-item:hover {
+      background: #f5f8ff;
+    }
+
+    .search-result-path {
+      font-size: 11px;
+      color: #999;
+      margin-bottom: 2px;
+    }
+
+    .search-result-path .file-name {
+      color: var(--link-color);
+      font-weight: 500;
+    }
+
+    .search-result-text {
+      font-size: 12px;
+      color: #444;
+      font-family: 'Consolas', 'Monaco', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .search-result-text mark {
+      background: #fff3bf;
+      color: inherit;
+      padding: 0 1px;
+      border-radius: 2px;
+    }
+
+    #search-status {
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #999;
+      text-align: center;
     }
 
     #content-wrapper {
@@ -484,6 +601,11 @@
     <div id="topbar">
       <div id="breadcrumb">
         <span>Select a file from the sidebar</span>
+      </div>
+      <div id="search-wrapper">
+        <span id="search-icon">&#x1F50D;</span>
+        <input type="text" id="search-input" placeholder="Search..." spellcheck="false">
+        <div id="search-results"></div>
       </div>
     </div>
     <div id="content-wrapper">
@@ -750,6 +872,96 @@
       targetPath = targetPath.replace(/\/+/g, '/');
 
       loadFile(targetPath);
+    }
+
+    // ===== Search =====
+    let searchTimer = null;
+    const searchInput = document.getElementById('search-input');
+    const searchResults = document.getElementById('search-results');
+
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const q = searchInput.value.trim();
+      if (q.length < 2) {
+        searchResults.classList.remove('visible');
+        searchResults.innerHTML = '';
+        return;
+      }
+      searchTimer = setTimeout(() => doSearch(q), 250);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchResults.classList.remove('visible');
+        searchInput.blur();
+      }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!document.getElementById('search-wrapper').contains(e.target)) {
+        searchResults.classList.remove('visible');
+      }
+    });
+
+    // Ctrl+K / Cmd+K to focus search
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+    });
+
+    async function doSearch(q) {
+      searchResults.innerHTML = '<div id="search-status">Searching...</div>';
+      searchResults.classList.add('visible');
+
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+
+        if (!data.results || data.results.length === 0) {
+          searchResults.innerHTML = `<div id="search-status">No results for "${q}"</div>`;
+          return;
+        }
+
+        searchResults.innerHTML = data.results.map((r, i) => {
+          const highlighted = highlightMatch(escapeHtml(r.text), q);
+          const lineLabel = r.line > 0 ? `:${r.line}` : '';
+          return `<div class="search-result-item" onclick="openSearchResult('${r.path}', ${r.line})">
+            <div class="search-result-path">
+              <span class="file-name">${escapeHtml(r.name)}</span>${escapeHtml(lineLabel)}
+              <span style="float:right;color:#ccc;">${escapeHtml(r.path)}</span>
+            </div>
+            <div class="search-result-text">${highlighted}</div>
+          </div>`;
+        }).join('');
+
+        if (data.total >= 50) {
+          searchResults.innerHTML += '<div id="search-status">...showing first 50 results</div>';
+        }
+      } catch (err) {
+        searchResults.innerHTML = `<div id="search-status">Error: ${err.message}</div>`;
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function highlightMatch(html, query) {
+      const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      return html.replace(re, '<mark>$1</mark>');
+    }
+
+    function openSearchResult(path, line) {
+      searchResults.classList.remove('visible');
+      searchInput.value = '';
+      loadFile(path);
+      // TODO: could scroll to specific line in the future
     }
 
     // ===== Tree Loading =====
