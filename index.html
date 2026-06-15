@@ -1030,13 +1030,26 @@
       document.getElementById('toc-container').style.display = tab === 'outline' ? '' : 'none';
     }
 
-    function buildTOC() {
+    function buildTOC(markdownSource) {
       const tocContainer = document.getElementById('toc-container');
       const outlineTab = document.getElementById('tab-outline');
-      const content = document.getElementById('content');
 
-      // Find all headings in rendered content
-      const headings = content.querySelectorAll('h1, h2, h3, h4');
+      // Extract headings directly from markdown source (skip code blocks)
+      const headings = [];
+      const lines = (markdownSource || '').split('\n');
+      let inCodeBlock = false;
+      for (const line of lines) {
+        if (line.trim().startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+          continue;
+        }
+        if (inCodeBlock) continue;
+        const match = line.match(/^(#{1,4})\s+(.+)/);
+        if (match) {
+          headings.push({ level: match[1].length, text: match[2].replace(/[*_`\[\]]/g, '').trim() });
+        }
+      }
+
       if (headings.length === 0) {
         tocContainer.innerHTML = '<div id="toc-empty">No headings found</div>';
         outlineTab.disabled = false;
@@ -1044,17 +1057,31 @@
       }
 
       tocContainer.innerHTML = '';
-      headings.forEach(h => {
-        const level = parseInt(h.tagName[1]);
+      headings.forEach((h, idx) => {
         const item = document.createElement('div');
-        item.className = `toc-item toc-h${level}`;
-        item.textContent = h.textContent;
+        item.className = `toc-item toc-h${h.level}`;
+        item.textContent = h.text;
         item.addEventListener('click', () => {
-          // Highlight active
           tocContainer.querySelectorAll('.toc-item').forEach(el => el.classList.remove('active'));
           item.classList.add('active');
-          // Scroll to heading
-          h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Find matching heading in DOM by level + text, using idx-th occurrence
+          const content = document.getElementById('content');
+          const domHeadings = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
+          // Count which occurrence this is among same-level headings
+          let sameLevelBefore = 0;
+          for (let i = 0; i < idx; i++) {
+            if (headings[i].level === h.level) sameLevelBefore++;
+          }
+          let found = 0;
+          for (const el of domHeadings) {
+            if (parseInt(el.tagName[1]) === h.level) {
+              if (found === sameLevelBefore) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                break;
+              }
+              found++;
+            }
+          }
         });
         tocContainer.appendChild(item);
       });
@@ -1109,11 +1136,13 @@
         content.innerHTML = marked.parse(data.content);
         content.style.display = 'block';
 
-        // Syntax highlight all code blocks
-        hljs.highlightAll();
+        // Build TOC from markdown source (before hljs to avoid dependency)
+        buildTOC(data.content);
 
-        // Build TOC from rendered headings
-        buildTOC();
+        // Syntax highlight code blocks within content only
+        content.querySelectorAll('pre code').forEach(block => {
+          try { hljs.highlightElement(block); } catch (e) {}
+        });
 
         // Scroll to anchor or top
         if (fragment) {
