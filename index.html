@@ -263,10 +263,48 @@
     }
 
     /* ===== Search ===== */
+    #nav-buttons {
+      display: flex;
+      gap: 2px;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
+    .nav-btn {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: #fff;
+      color: #666;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      background: #f0f0f0;
+      border-color: #ccc;
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
     #search-wrapper {
       position: relative;
-      width: 280px;
+      display: flex;
+      gap: 4px;
       flex-shrink: 0;
+    }
+
+    #search-input-wrap {
+      position: relative;
+      width: 260px;
     }
 
     #search-input {
@@ -289,6 +327,24 @@
       color: #bbb;
     }
 
+    #search-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: #fff;
+      color: #555;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    #search-btn:hover {
+      background: #f0f0f0;
+      border-color: #ccc;
+    }
+
     #search-icon {
       position: absolute;
       left: 8px;
@@ -302,10 +358,10 @@
     #search-results {
       display: none;
       position: absolute;
-      top: 100%;
+      top: calc(100% + 4px);
       left: 0;
-      right: 0;
-      margin-top: 4px;
+      width: 400px;
+      right: auto;
       background: #fff;
       border: 1px solid var(--border-color);
       border-radius: 8px;
@@ -602,10 +658,17 @@
       <div id="breadcrumb">
         <span>Select a file from the sidebar</span>
       </div>
+      <div id="nav-buttons">
+        <button class="nav-btn" id="btn-back" onclick="navigateBack()" disabled title="Back (Alt+Left)">&#9664;</button>
+        <button class="nav-btn" id="btn-forward" onclick="navigateForward()" disabled title="Forward (Alt+Right)">&#9654;</button>
+      </div>
       <div id="search-wrapper">
-        <span id="search-icon">&#x1F50D;</span>
-        <input type="text" id="search-input" placeholder="Search..." spellcheck="false">
-        <div id="search-results"></div>
+        <div id="search-input-wrap">
+          <span id="search-icon">&#x1F50D;</span>
+          <input type="text" id="search-input" placeholder="Search... (Ctrl+K)" spellcheck="false">
+          <div id="search-results"></div>
+        </div>
+        <button id="search-btn" onclick="triggerSearch()">Search</button>
       </div>
     </div>
     <div id="content-wrapper">
@@ -623,6 +686,11 @@
     // ===== State =====
     let currentFile = null;
     let treeData = null;
+
+    // Navigation history
+    let navHistory = [];
+    let navIndex = -1;
+    let navSkipPush = false;
 
     // ===== Configure marked.js =====
     marked.setOptions({
@@ -797,6 +865,16 @@
       const activeEl = document.querySelector(`.tree-file[data-path="${path}"]`);
       if (activeEl) activeEl.classList.add('active');
 
+      // Push to navigation history (skip if triggered by back/forward)
+      if (!navSkipPush) {
+        // Trim forward history when navigating to a new file
+        navHistory = navHistory.slice(0, navIndex + 1);
+        navHistory.push(path);
+        navIndex = navHistory.length - 1;
+      }
+      navSkipPush = false;
+      updateNavButtons();
+
       // Show loading
       const content = document.getElementById('content');
       const welcome = document.getElementById('welcome');
@@ -874,6 +952,38 @@
       loadFile(targetPath);
     }
 
+    // ===== Navigation History =====
+    function updateNavButtons() {
+      document.getElementById('btn-back').disabled = navIndex <= 0;
+      document.getElementById('btn-forward').disabled = navIndex >= navHistory.length - 1;
+    }
+
+    function navigateBack() {
+      if (navIndex <= 0) return;
+      navIndex--;
+      navSkipPush = true;
+      loadFile(navHistory[navIndex]);
+    }
+
+    function navigateForward() {
+      if (navIndex >= navHistory.length - 1) return;
+      navIndex++;
+      navSkipPush = true;
+      loadFile(navHistory[navIndex]);
+    }
+
+    // Alt+Left / Alt+Right shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateBack();
+      }
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        navigateForward();
+      }
+    });
+
     // ===== Search =====
     let searchTimer = null;
     const searchInput = document.getElementById('search-input');
@@ -891,11 +1001,27 @@
     });
 
     searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(searchTimer);
+        triggerSearch();
+      }
       if (e.key === 'Escape') {
         searchResults.classList.remove('visible');
         searchInput.blur();
       }
     });
+
+    function triggerSearch() {
+      clearTimeout(searchTimer);
+      const q = searchInput.value.trim();
+      if (q.length < 2) {
+        searchResults.classList.remove('visible');
+        searchResults.innerHTML = '';
+        return;
+      }
+      doSearch(q);
+    }
 
     // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
