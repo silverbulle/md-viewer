@@ -8,3 +8,8 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec

@@ -10,11 +10,21 @@ import os
 import sys
 import json
 import argparse
+import webbrowser
+import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 from pathlib import Path
 
 DEFAULT_PORT = 8080
+
+
+def get_app_dir():
+    """Get application directory, compatible with PyInstaller --onefile."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent
 
 def get_md_tree(base_dir, current_dir=None):
     """Recursively build a tree structure of MD files."""
@@ -163,7 +173,7 @@ class MDHandler(SimpleHTTPRequestHandler):
 
     def serve_frontend(self):
         """Serve the index.html file."""
-        frontend_path = Path(__file__).parent / 'index.html'
+        frontend_path = get_app_dir() / 'index.html'
         if not frontend_path.exists():
             self.send_error(404, "Frontend not found")
             return
@@ -208,6 +218,8 @@ def main():
                         help=f'Port to listen on (default: {DEFAULT_PORT})')
     parser.add_argument('--host', '-H', default='localhost',
                         help='Host to bind to (default: localhost)')
+    parser.add_argument('--no-browser', action='store_true',
+                        help='Do not auto-open browser on startup')
 
     args = parser.parse_args()
 
@@ -218,16 +230,32 @@ def main():
             print(f"Error: '{args.directory}' is not a valid directory")
             sys.exit(1)
         MDHandler.base_directory = str(base_dir)
-        print(f"  Directory: {base_dir}")
     else:
         MDHandler.base_directory = None
-        print(f"  Directory: (select from browser UI)")
 
     # Start server
     server = HTTPServer((args.host, args.port), MDHandler)
-    print(f"Markdown Browser started!")
-    print(f"  URL: http://{args.host}:{args.port}")
-    print(f"  Press Ctrl+C to stop")
+    url = f"http://{'localhost' if args.host == '0.0.0.0' else args.host}:{args.port}"
+
+    print(f"")
+    print(f"  +--------------------------------------+")
+    print(f"  |       MD Browser is running          |")
+    print(f"  +--------------------------------------+")
+    if MDHandler.base_directory:
+        print(f"  |  Dir:  {MDHandler.base_directory}")
+    else:
+        print(f"  |  Dir:  (select from browser UI)")
+    print(f"  |  URL:  {url}")
+    print(f"  +--------------------------------------+")
+    print(f"  |  Press Ctrl+C to stop                |")
+    print(f"  +--------------------------------------+")
+    print(f"")
+
+    # Auto-open browser after a short delay
+    if not args.no_browser:
+        def open_browser():
+            webbrowser.open(url)
+        threading.Timer(0.5, open_browser).start()
 
     try:
         server.serve_forever()
