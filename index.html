@@ -741,12 +741,31 @@
       const title = (typeof token === 'object' && token !== null) ? (token.title || '') : '';
       const text = (typeof token === 'object' && token !== null) ? (token.text || '') : '';
 
-      if (typeof href === 'string' && href.endsWith('.md') && !href.startsWith('http')) {
-        return `<a href="#" onclick="navigateToLink('${href}'); return false;" title="${title}">${text}</a>`;
+      if (typeof href !== 'string') {
+        return `<a href="" title="${title}">${text}</a>`;
       }
-      if (typeof href === 'string' && href.startsWith('http')) {
+
+      // External links
+      if (href.startsWith('http')) {
         return `<a href="${href}" target="_blank" rel="noopener" title="${title}">${text} ↗</a>`;
       }
+
+      // Split path and fragment
+      const hashIdx = href.indexOf('#');
+      const linkPath = hashIdx >= 0 ? href.substring(0, hashIdx) : href;
+      const fragment = hashIdx >= 0 ? href.substring(hashIdx + 1) : '';
+
+      // Same-page anchor (no path, only #fragment)
+      if (!linkPath && fragment) {
+        return `<a href="#" onclick="scrollToAnchor('${fragment}'); return false;" title="${title}">${text}</a>`;
+      }
+
+      // .md file link (with or without fragment)
+      if (linkPath.endsWith('.md')) {
+        const fragArg = fragment ? `, '${fragment}'` : '';
+        return `<a href="#" onclick="navigateToLink('${linkPath}'${fragArg}); return false;" title="${title}">${text}</a>`;
+      }
+
       return `<a href="${href}" title="${title}">${text}</a>`;
     };
 
@@ -918,7 +937,7 @@
     }
 
     // ===== File Loading =====
-    async function loadFile(path) {
+    async function loadFile(path, fragment) {
       // Update active state in sidebar
       document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
       const activeEl = document.querySelector(`.tree-file[data-path="${path}"]`);
@@ -964,13 +983,22 @@
         content.innerHTML = marked.parse(data.content);
         content.style.display = 'block';
 
-        // Scroll to top
-        wrapper.scrollTop = 0;
-
         // Re-highlight code blocks
         content.querySelectorAll('pre code').forEach(block => {
           hljs.highlightElement(block);
         });
+
+        // Scroll to anchor or top
+        if (fragment) {
+          const el = findAnchorElement(fragment);
+          if (el) {
+            setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+          } else {
+            wrapper.scrollTop = 0;
+          }
+        } else {
+          wrapper.scrollTop = 0;
+        }
       } catch (err) {
         content.innerHTML = `<h1>Error</h1><p>${err.message}</p>`;
         content.style.display = 'block';
@@ -981,7 +1009,7 @@
     }
 
     // ===== Link Navigation =====
-    function navigateToLink(href) {
+    function navigateToLink(href, fragment) {
       if (!currentFile) return;
 
       // Resolve relative path from current file
@@ -991,7 +1019,6 @@
       let targetPath;
 
       if (href.startsWith('../')) {
-        // Go up from current directory
         const parts = currentDir.split('/').filter(Boolean);
         const upCount = (href.match(/\.\.\//g) || []).length;
         for (let i = 0; i < upCount && parts.length > 0; i++) {
@@ -1005,10 +1032,36 @@
         targetPath = currentDir ? `${currentDir}/${href}` : href;
       }
 
-      // Normalize path
       targetPath = targetPath.replace(/\/+/g, '/');
 
-      loadFile(targetPath);
+      loadFile(targetPath, fragment);
+    }
+
+    // Scroll to an anchor within the current document
+    function scrollToAnchor(fragment) {
+      const el = findAnchorElement(fragment);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    // Find element matching a fragment (heading id or text match)
+    function findAnchorElement(fragment) {
+      const content = document.getElementById('content');
+      // Try by id first (marked generates ids for headings)
+      let el = document.getElementById(fragment);
+      if (el) return el;
+      // Try by decoded id
+      el = document.getElementById(decodeURIComponent(fragment));
+      if (el) return el;
+      // Try matching heading text
+      const decoded = decodeURIComponent(fragment).replace(/-/g, ' ').toLowerCase();
+      const headings = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      for (const h of headings) {
+        if (h.textContent.toLowerCase().trim() === decoded) return h;
+        if (h.id && h.id.toLowerCase() === fragment.toLowerCase()) return h;
+      }
+      return null;
     }
 
     // ===== Navigation History =====
