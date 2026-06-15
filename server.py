@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import json
+import socket
 import argparse
 import webbrowser
 import threading
@@ -128,6 +129,13 @@ class MDHandler(SimpleHTTPRequestHandler):
     """HTTP request handler with MD file API."""
 
     base_directory = None
+
+    def handle(self):
+        """Override to suppress ConnectionAbortedError on Windows."""
+        try:
+            super().handle()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Client disconnected — normal for browser refresh/close
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -322,11 +330,19 @@ def main():
     print(f"  +--------------------------------------+")
     print(f"")
 
-    # Auto-open browser after a short delay
+    # Auto-open browser after server is confirmed ready
     if not args.no_browser:
-        def open_browser():
-            webbrowser.open(url)
-        threading.Timer(0.5, open_browser).start()
+        def open_browser_when_ready():
+            bind_host = '127.0.0.1' if args.host == '0.0.0.0' else args.host
+            for _ in range(50):  # up to 5 seconds
+                try:
+                    s = socket.create_connection((bind_host, args.port), timeout=0.1)
+                    s.close()
+                    webbrowser.open(url)
+                    return
+                except OSError:
+                    pass
+        threading.Thread(target=open_browser_when_ready, daemon=True).start()
 
     try:
         server.serve_forever()
