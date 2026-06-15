@@ -167,6 +167,97 @@
       display: none;
     }
 
+    /* ===== Sidebar Tabs ===== */
+    #sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    .sidebar-tab {
+      flex: 1;
+      padding: 8px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #6c7086;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      text-align: center;
+    }
+
+    .sidebar-tab:hover {
+      color: #bac2de;
+    }
+
+    .sidebar-tab.active {
+      color: var(--sidebar-accent);
+      border-bottom-color: var(--sidebar-accent);
+    }
+
+    .sidebar-tab:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    #tree-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    #toc-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+      display: none;
+    }
+
+    #toc-container::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #toc-container::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.15);
+      border-radius: 2px;
+    }
+
+    .toc-item {
+      display: block;
+      padding: 4px 12px;
+      font-size: 13px;
+      color: var(--sidebar-text);
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-decoration: none;
+    }
+
+    .toc-item:hover {
+      background: var(--sidebar-hover);
+    }
+
+    .toc-item.active {
+      color: var(--sidebar-accent);
+      background: var(--sidebar-active);
+    }
+
+    .toc-h1 { padding-left: 12px; font-weight: 600; }
+    .toc-h2 { padding-left: 24px; }
+    .toc-h3 { padding-left: 36px; font-size: 12px; color: #a6adc8; }
+    .toc-h4 { padding-left: 48px; font-size: 12px; color: #7f849c; }
+
+    #toc-empty {
+      padding: 20px 12px;
+      font-size: 12px;
+      color: #6c7086;
+      text-align: center;
+    }
+
     #tree-container {
       flex: 1;
       overflow-y: auto;
@@ -685,7 +776,12 @@
       <div id="dir-name"></div>
       <div id="dir-error"></div>
     </div>
+    <div id="sidebar-tabs">
+      <button class="sidebar-tab active" id="tab-files" onclick="switchTab('files')">Files</button>
+      <button class="sidebar-tab" id="tab-outline" onclick="switchTab('outline')" disabled>Outline</button>
+    </div>
     <div id="tree-container"></div>
+    <div id="toc-container"></div>
   </div>
 
   <div id="main">
@@ -936,6 +1032,49 @@
       }
     }
 
+    // ===== Sidebar Tabs & TOC =====
+    let currentTab = 'files';
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tab-files').classList.toggle('active', tab === 'files');
+      document.getElementById('tab-outline').classList.toggle('active', tab === 'outline');
+      document.getElementById('tree-container').style.display = tab === 'files' ? '' : 'none';
+      document.getElementById('toc-container').style.display = tab === 'outline' ? '' : 'none';
+    }
+
+    function buildTOC() {
+      const tocContainer = document.getElementById('toc-container');
+      const outlineTab = document.getElementById('tab-outline');
+      const content = document.getElementById('content');
+
+      // Find all headings in rendered content
+      const headings = content.querySelectorAll('h1, h2, h3, h4');
+      if (headings.length === 0) {
+        tocContainer.innerHTML = '<div id="toc-empty">No headings found</div>';
+        outlineTab.disabled = false;
+        return;
+      }
+
+      tocContainer.innerHTML = '';
+      headings.forEach(h => {
+        const level = parseInt(h.tagName[1]);
+        const item = document.createElement('div');
+        item.className = `toc-item toc-h${level}`;
+        item.textContent = h.textContent;
+        item.addEventListener('click', () => {
+          // Highlight active
+          tocContainer.querySelectorAll('.toc-item').forEach(el => el.classList.remove('active'));
+          item.classList.add('active');
+          // Scroll to heading
+          h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        tocContainer.appendChild(item);
+      });
+
+      outlineTab.disabled = false;
+    }
+
     // ===== File Loading =====
     async function loadFile(path, fragment) {
       // Update active state in sidebar
@@ -987,6 +1126,9 @@
         content.querySelectorAll('pre code').forEach(block => {
           hljs.highlightElement(block);
         });
+
+        // Build TOC from rendered headings
+        buildTOC();
 
         // Scroll to anchor or top
         if (fragment) {
