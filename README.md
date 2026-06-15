@@ -44,7 +44,7 @@ python server.py ../001-network-protocols
 | **Markdown 渲染** | GFM 表格、代码语法高亮、ASCII 图表 |
 | **交叉引用跳转** | 点击文档内 `.md` 链接直接跳转到目标文件 |
 | **锚点跳转** | 支持 `file.md#heading` 跨文件锚点和 `#heading` 同页面锚点 |
-| **文档大纲 (Outline)** | 侧边栏 Files/Outline 切换，显示 h1~h4 标题结构，点击跳转 |
+| **文档大纲 (Outline)** | 侧边栏 Files/Outline 切换，显示 h1~h4 标题结构，点击跳转（从 MD 源码提取，不依赖渲染 DOM） |
 
 ### 搜索
 
@@ -133,3 +133,26 @@ build.bat
 | `/api/switch?dir=...` | GET | 切换到指定目录 |
 | `/api/search?q=...` | GET | 全文搜索，返回匹配结果 |
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
+
+## 更新日志
+
+### v1.3 — 文档大纲 & 锚点跳转
+- **Outline tab**: 侧边栏 Files/Outline 切换，从 MD 源码正则提取 h1~h4 标题（跳过代码块），点击平滑滚动到对应位置
+- **跨文件锚点**: `file.md#heading` 链接正确拆分路径和片段，加载文件后自动滚动
+- **同页面锚点**: `#heading` 链接在当前文档内跳转
+- **Ctrl+Left/Right**: 前进后退快捷键
+
+### v1.2 — 搜索 & 导航
+- **全文模糊搜索**: 搜索所有 MD 文件的文件名和内容，Ctrl+K 快捷聚焦，Enter/按钮手动触发
+- **前进/后退按钮**: 浏览历史记录，按钮 + 快捷键导航
+- **Search 按钮**: 手动触发搜索（除自动防抖外）
+
+### v1.1 — 目录选择 & 多线程
+- **原生文件夹选择器**: 📂 按钮弹出 Windows 目录选择对话框（ctypes SHBrowseForFolder）
+- **记忆上次目录**: localStorage 持久化，启动自动恢复
+- **ThreadingHTTPServer**: 多线程处理并发请求，多浏览器可同时访问
+- **浏览器启动修复**: 等待服务器端口就绪后再打开浏览器，避免 chrome-error
+
+### v1.0 — 初始版本
+- Python 后端（标准库，零依赖）+ 单 HTML 前端（marked.js + highlight.js）
+- 目录树侧边栏、Markdown 渲染、交叉引用跳转、PyInstaller 打包为单文件 exe
