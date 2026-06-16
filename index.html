@@ -742,6 +742,42 @@
       to { transform: rotate(360deg); }
     }
 
+    /* ===== Search Highlights & Code Line Numbers ===== */
+    .search-match {
+      background: #fff3bf;
+      border-radius: 2px;
+      padding: 1px 0;
+      box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.3);
+    }
+
+    .search-match-first {
+      background: #ffc107;
+      box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.5);
+    }
+
+    #content pre {
+      position: relative;
+    }
+
+    #content pre code {
+      display: block;
+      padding-left: 3.5em;
+    }
+
+    .line-num {
+      position: absolute;
+      left: 0;
+      width: 2.8em;
+      text-align: right;
+      padding-right: 0.6em;
+      color: #b0b0b0;
+      font-size: 12px;
+      line-height: inherit;
+      user-select: none;
+      pointer-events: none;
+      border-right: 1px solid var(--border-color);
+    }
+
     /* ===== Responsive ===== */
     @media (max-width: 768px) {
       #sidebar {
@@ -1089,8 +1125,72 @@
       outlineTab.disabled = false;
     }
 
+    // ===== Search Highlight in Content =====
+    function highlightSearchTerm(term) {
+      const content = document.getElementById('content');
+      if (!term || !content) return 0;
+
+      const lowerTerm = term.toLowerCase();
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+      const matches = [];
+
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        // Skip code blocks (they have their own highlighting)
+        if (node.parentElement && node.parentElement.closest('pre')) continue;
+        const text = node.textContent;
+        const lowerText = text.toLowerCase();
+        let idx = lowerText.indexOf(lowerTerm);
+        if (idx >= 0) {
+          matches.push({ node, idx, text });
+        }
+      }
+
+      let count = 0;
+      for (const { node, text } of matches) {
+        const parent = node.parentNode;
+        if (!parent) continue;
+        const frag = document.createDocumentFragment();
+        let remaining = text;
+        const lowerRemaining = remaining.toLowerCase();
+        let pos = lowerRemaining.indexOf(lowerTerm);
+
+        while (pos >= 0) {
+          if (pos > 0) frag.appendChild(document.createTextNode(remaining.substring(0, pos)));
+          const span = document.createElement('span');
+          span.className = count === 0 ? 'search-match search-match-first' : 'search-match';
+          span.textContent = remaining.substring(pos, pos + term.length);
+          frag.appendChild(span);
+          remaining = remaining.substring(pos + term.length);
+          pos = remaining.toLowerCase().indexOf(lowerTerm);
+          count++;
+        }
+        if (remaining) frag.appendChild(document.createTextNode(remaining));
+        parent.replaceChild(frag, node);
+      }
+
+      return count;
+    }
+
+    // ===== Code Line Numbers =====
+    function addCodeLineNumbers() {
+      const content = document.getElementById('content');
+      content.querySelectorAll('pre code').forEach(block => {
+        const text = block.textContent;
+        const lines = text.split('\n');
+        // Remove trailing empty line from split
+        if (lines.length > 1 && lines[lines.length - 1].trim() === '') lines.pop();
+        if (lines.length < 2) return; // Skip single-line blocks
+
+        const nums = document.createElement('span');
+        nums.className = 'line-num';
+        nums.innerHTML = lines.map((_, i) => i + 1).join('\n');
+        block.parentNode.insertBefore(nums, block);
+      });
+    }
+
     // ===== File Loading =====
-    async function loadFile(path, fragment) {
+    async function loadFile(path, fragment, searchTerm) {
       // Update active state in sidebar
       document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
       const activeEl = document.querySelector(`.tree-file[data-path="${path}"]`);
@@ -1144,8 +1244,20 @@
           try { hljs.highlightElement(block); } catch (e) {}
         });
 
-        // Scroll to anchor or top
-        if (fragment) {
+        // Add line numbers to code blocks
+        addCodeLineNumbers();
+
+        // Highlight search matches and scroll to first match
+        if (searchTerm) {
+          const matchCount = highlightSearchTerm(searchTerm);
+          const firstMatch = content.querySelector('.search-match-first');
+          if (firstMatch) {
+            setTimeout(() => firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+          } else if (matchCount === 0) {
+            wrapper.scrollTop = 0;
+          }
+        } else if (fragment) {
+          // Scroll to anchor or top
           const el = findAnchorElement(fragment);
           if (el) {
             setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -1352,10 +1464,10 @@
     }
 
     function openSearchResult(path, line) {
+      const query = searchInput.value.trim();
       searchResults.classList.remove('visible');
       searchInput.value = '';
-      loadFile(path);
-      // TODO: could scroll to specific line in the future
+      loadFile(path, null, query);
     }
 
     // ===== Tree Loading =====
