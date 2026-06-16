@@ -136,6 +136,11 @@ build.bat
 
 ## 更新日志
 
+### v1.4 — 文件夹选择器修复
+- **对话框聚焦**: 设置 `hwndOwner` 为 `GetForegroundWindow()`，对话框弹出时自动获得焦点，不再隐藏在后台
+- **路径传递可靠性**: 移除多余子线程层，直接在 HTTP 请求线程调用对话框，避免 COM 线程模型不稳定导致路径丢失
+- **COM 清理**: 使用 `try/finally` 确保 `CoUninitialize()` 始终执行
+
 ### v1.3 — 文档大纲 & 锚点跳转
 - **Outline tab**: 侧边栏 Files/Outline 切换，从 MD 源码正则提取 h1~h4 标题（跳过代码块），点击平滑滚动到对应位置
 - **跨文件锚点**: `file.md#heading` 链接正确拆分路径和片段，加载文件后自动滚动
