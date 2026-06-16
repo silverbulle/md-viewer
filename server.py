@@ -27,6 +27,7 @@ def pick_folder():
     if sys.platform != 'win32':
         return None
     try:
+        user32 = ctypes.windll.user32
         shell32 = ctypes.windll.shell32
         ole32 = ctypes.windll.ole32
 
@@ -46,18 +47,20 @@ def pick_folder():
         BIF_NEWDIALOGSTYLE = 0x0040
 
         bi = BROWSEINFO()
+        bi.hwndOwner = user32.GetForegroundWindow()  # Attach to focused window
         bi.lpszTitle = "Select Markdown Directory"
         bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
 
         ole32.CoInitialize(None)
-        pidl = shell32.SHBrowseForFolder(ctypes.byref(bi))
-        ole32.CoUninitialize()
-
-        if pidl:
-            path_buf = ctypes.create_unicode_buffer(260)
-            shell32.SHGetPathFromIDListW(pidl, path_buf)
-            shell32.ILFree(pidl)
-            return str(Path(path_buf.value))
+        try:
+            pidl = shell32.SHBrowseForFolder(ctypes.byref(bi))
+            if pidl:
+                path_buf = ctypes.create_unicode_buffer(260)
+                shell32.SHGetPathFromIDListW(pidl, path_buf)
+                shell32.ILFree(pidl)
+                return str(Path(path_buf.value))
+        finally:
+            ole32.CoUninitialize()
     except Exception:
         pass
     return None
@@ -256,21 +259,8 @@ class MDHandler(SimpleHTTPRequestHandler):
 
     def handle_pick_folder(self):
         """Open native folder picker and return selected path."""
-        result = {"path": None}
-
-        def run_dialog():
-            path = pick_folder()
-            if path:
-                result["path"] = path
-
-        t = threading.Thread(target=run_dialog)
-        t.start()
-        t.join(timeout=300)  # Wait up to 5 minutes for user to pick
-
-        if result["path"]:
-            self.send_json({"path": result["path"]})
-        else:
-            self.send_json({"path": None})
+        path = pick_folder()
+        self.send_json({"path": path})
 
     def handle_file(self, query):
         """Return MD file content."""
