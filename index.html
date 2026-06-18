@@ -676,11 +676,110 @@
       overflow-x: auto;
       display: flex;
       justify-content: center;
+      cursor: zoom-in;
+      position: relative;
+    }
+
+    .mermaid-container::after {
+      content: '🔍 点击放大';
+      position: absolute;
+      top: 6px;
+      right: 10px;
+      font-size: 11px;
+      color: #999;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+
+    .mermaid-container:hover::after {
+      opacity: 1;
     }
 
     .mermaid-container svg {
-      max-width: 100%;
       height: auto;
+    }
+
+    /* Mermaid Zoom Overlay */
+    .mermaid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+    }
+
+    .mermaid-overlay-toolbar {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      gap: 6px;
+      z-index: 10001;
+    }
+
+    .mermaid-overlay-toolbar button {
+      width: 36px;
+      height: 36px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      transition: background 0.15s;
+    }
+
+    .mermaid-overlay-toolbar button:hover {
+      background: #f0f0f0;
+    }
+
+    .mermaid-overlay-toolbar button.close-btn {
+      font-size: 20px;
+      margin-left: 8px;
+    }
+
+    .mermaid-overlay-viewport {
+      width: 90vw;
+      height: 85vh;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+      position: relative;
+    }
+
+    .mermaid-overlay-content {
+      transform-origin: center center;
+      transition: transform 0.15s ease;
+      padding: 40px;
+      min-width: min-content;
+    }
+
+    .mermaid-overlay-content svg {
+      max-width: none;
+    }
+
+    .mermaid-overlay-zoom-label {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10001;
     }
 
     .mermaid-error {
@@ -952,9 +1051,9 @@
       theme: 'default',
       securityLevel: 'loose',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif',
-      flowchart: { curve: 'basis', htmlLabels: true },
-      sequence: { mirrorActors: false },
-      mindmap: { padding: 16 }
+      flowchart: { curve: 'basis', htmlLabels: true, useMaxWidth: false },
+      sequence: { mirrorActors: false, useMaxWidth: false },
+      mindmap: { padding: 16, useMaxWidth: false }
     });
 
     // Global counter for unique mermaid element IDs
@@ -976,6 +1075,7 @@
         try {
           const { svg } = await mermaid.render(id, code);
           container.innerHTML = svg;
+          container.addEventListener('click', () => openMermaidOverlay(svg));
         } catch (e) {
           // Clean up any DOM residue left by mermaid on failure
           const leftover = document.getElementById(`d${id}`);
@@ -990,6 +1090,115 @@
 
         pre.parentNode.replaceChild(container, pre);
       }
+    }
+
+    // ===== Mermaid Zoom Overlay =====
+    function openMermaidOverlay(svgHtml) {
+      const overlay = document.createElement('div');
+      overlay.className = 'mermaid-overlay';
+
+      let zoom = 1;
+      const ZOOM_STEP = 0.2;
+      const ZOOM_MIN = 0.2;
+      const ZOOM_MAX = 5;
+
+      overlay.innerHTML = `
+        <div class="mermaid-overlay-toolbar">
+          <button class="zoom-in-btn" title="放大">＋</button>
+          <button class="zoom-out-btn" title="缩小">－</button>
+          <button class="zoom-reset-btn" title="重置">1:1</button>
+          <button class="zoom-fit-btn" title="适应窗口">⊡</button>
+          <button class="close-btn" title="关闭 (Esc)">✕</button>
+        </div>
+        <div class="mermaid-overlay-viewport">
+          <div class="mermaid-overlay-content">${svgHtml}</div>
+        </div>
+        <div class="mermaid-overlay-zoom-label">100%</div>
+      `;
+
+      document.body.appendChild(overlay);
+      document.body.style.overflow = 'hidden';
+
+      const content = overlay.querySelector('.mermaid-overlay-content');
+      const viewport = overlay.querySelector('.mermaid-overlay-viewport');
+      const zoomLabel = overlay.querySelector('.mermaid-overlay-zoom-label');
+
+      function updateZoom() {
+        content.style.transform = `scale(${zoom})`;
+        zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      }
+
+      // Fit to viewport on open
+      function fitToViewport() {
+        const svg = content.querySelector('svg');
+        if (!svg) return;
+        const svgW = svg.getBoundingClientRect().width / zoom;
+        const svgH = svg.getBoundingClientRect().height / zoom;
+        const vpW = viewport.clientWidth - 80;
+        const vpH = viewport.clientHeight - 80;
+        zoom = Math.min(vpW / svgW, vpH / svgH, 1);
+        zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+        updateZoom();
+      }
+
+      fitToViewport();
+
+      overlay.querySelector('.zoom-in-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        zoom = Math.min(ZOOM_MAX, zoom + ZOOM_STEP);
+        updateZoom();
+      });
+
+      overlay.querySelector('.zoom-out-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        zoom = Math.max(ZOOM_MIN, zoom - ZOOM_STEP);
+        updateZoom();
+      });
+
+      overlay.querySelector('.zoom-reset-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        zoom = 1;
+        updateZoom();
+      });
+
+      overlay.querySelector('.zoom-fit-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        fitToViewport();
+      });
+
+      function closeOverlay() {
+        overlay.remove();
+        document.body.style.overflow = '';
+      }
+
+      overlay.querySelector('.close-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        closeOverlay();
+      });
+
+      // Close on backdrop click
+      overlay.addEventListener('click', e => {
+        if (e.target === overlay) closeOverlay();
+      });
+
+      // Mouse wheel zoom
+      viewport.addEventListener('wheel', e => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+          zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
+          updateZoom();
+        }
+      }, { passive: false });
+
+      // Keyboard: Esc to close, +/- to zoom
+      function onKeyDown(e) {
+        if (e.key === 'Escape') { closeOverlay(); document.removeEventListener('keydown', onKeyDown); }
+        else if (e.key === '+' || e.key === '=') { zoom = Math.min(ZOOM_MAX, zoom + ZOOM_STEP); updateZoom(); }
+        else if (e.key === '-') { zoom = Math.max(ZOOM_MIN, zoom - ZOOM_STEP); updateZoom(); }
+        else if (e.key === '0') { zoom = 1; updateZoom(); }
+      }
+      document.addEventListener('keydown', onKeyDown);
     }
 
     // ===== API Functions =====
