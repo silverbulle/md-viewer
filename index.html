@@ -9,6 +9,8 @@
   <!-- highlight.js for code syntax highlighting -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <!-- Mermaid.js for diagram rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <style>
     :root {
       --sidebar-width: 280px;
@@ -664,6 +666,47 @@
       font-size: 13px;
     }
 
+    /* ===== Mermaid Diagrams ===== */
+    .mermaid-container {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 20px;
+      margin: 16px 0;
+      overflow-x: auto;
+      display: flex;
+      justify-content: center;
+    }
+
+    .mermaid-container svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .mermaid-error {
+      background: #fff5f5;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin: 16px 0;
+      color: #dc2626;
+      font-size: 13px;
+    }
+
+    .mermaid-error summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .mermaid-error pre {
+      margin-top: 8px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+
     #content blockquote {
       border-left: 4px solid var(--blockquote-border);
       background: var(--blockquote-bg);
@@ -902,6 +945,52 @@
     };
 
     marked.use({ renderer });
+
+    // ===== Configure Mermaid.js =====
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'loose',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif',
+      flowchart: { curve: 'basis', htmlLabels: true },
+      sequence: { mirrorActors: false },
+      mindmap: { padding: 16 }
+    });
+
+    // Global counter for unique mermaid element IDs
+    let mermaidCounter = 0;
+
+    async function renderMermaidDiagrams() {
+      const content = document.getElementById('content');
+      const mermaidBlocks = content.querySelectorAll('pre code.language-mermaid');
+
+      for (const block of mermaidBlocks) {
+        const pre = block.parentNode;
+        const code = block.textContent.trim();
+        if (!code) continue;
+
+        const id = `mermaid-${Date.now()}-${mermaidCounter++}`;
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+
+        try {
+          const { svg } = await mermaid.render(id, code);
+          container.innerHTML = svg;
+        } catch (e) {
+          // Clean up any DOM residue left by mermaid on failure
+          const leftover = document.getElementById(`d${id}`);
+          if (leftover) leftover.remove();
+          // Show a collapsible error with the raw source
+          container.className = 'mermaid-error';
+          container.innerHTML = `<details open>
+            <summary>Mermaid 渲染失败: ${e.message || '未知错误'}</summary>
+            <pre>${code.replace(/</g, '&lt;')}</pre>
+          </details>`;
+        }
+
+        pre.parentNode.replaceChild(container, pre);
+      }
+    }
 
     // ===== API Functions =====
     async function fetchTree() {
@@ -1176,6 +1265,7 @@
     function addCodeLineNumbers() {
       const content = document.getElementById('content');
       content.querySelectorAll('pre code').forEach(block => {
+        if (block.classList.contains('language-mermaid')) return;
         const text = block.textContent;
         const lines = text.split('\n');
         // Remove trailing empty line from split
@@ -1239,13 +1329,17 @@
         // Build TOC from markdown source (before hljs to avoid dependency)
         buildTOC(data.content);
 
-        // Syntax highlight code blocks within content only
+        // Syntax highlight code blocks (skip mermaid blocks)
         content.querySelectorAll('pre code').forEach(block => {
+          if (block.classList.contains('language-mermaid')) return;
           try { hljs.highlightElement(block); } catch (e) {}
         });
 
-        // Add line numbers to code blocks
+        // Add line numbers to code blocks (skip mermaid blocks)
         addCodeLineNumbers();
+
+        // Render Mermaid diagrams
+        await renderMermaidDiagrams();
 
         // Highlight search matches and scroll to first match
         if (searchTerm) {

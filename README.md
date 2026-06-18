@@ -41,7 +41,8 @@ python server.py ../001-network-protocols
 
 | 功能 | 说明 |
 |------|------|
-| **Markdown 渲染** | GFM 表格、代码语法高亮、ASCII 图表 |
+| **Markdown 渲染** | GFM 表格、代码语法高亮、Mermaid 图表、ASCII 图表 |
+| **Mermaid 图表** | 支持流程图、时序图、脑图、甘特图、类图、状态图等所有 Mermaid 图表类型，渲染失败时显示错误信息和源码 |
 | **交叉引用跳转** | 点击文档内 `.md` 链接直接跳转到目标文件 |
 | **锚点跳转** | 支持 `file.md#heading` 跨文件锚点和 `#heading` 同页面锚点 |
 | **文档大纲 (Outline)** | 侧边栏 Files/Outline 切换，显示 h1~h4 标题结构，点击跳转（从 MD 源码提取，不依赖渲染 DOM） |
@@ -104,6 +105,7 @@ python server.py ../001-network-protocols --host 0.0.0.0
 前端 JS 库通过 CDN 加载（首次需联网，之后浏览器缓存）：
 - [marked.js](https://marked.js.org/) — Markdown 渲染
 - [highlight.js](https://highlightjs.org/) — 代码语法高亮
+- [mermaid.js](https://mermaid.js.org/) — 图表渲染（流程图、时序图、脑图等）
 
 ## 构建 exe
 
@@ -137,6 +139,11 @@ build.bat
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
 
 ## 更新日志
+
+### v1.5 — Mermaid 图表支持
+- **Mermaid 渲染**: 支持所有 Mermaid 图表类型（流程图、时序图、脑图、甘特图、类图、状态图等）
+- **错误处理**: 渲染失败时显示可折叠错误信息和原始代码，不阻塞页面
+- **智能跳过**: Mermaid 代码块自动跳过 hljs 语法高亮和行号添加
 
 ### v1.4 — 搜索定位 & 代码行号 & 选择器修复
 - **搜索结果定位**: 点击搜索结果后自动跳转到匹配位置并高亮显示（黄色标记），首个匹配项加粗高亮
