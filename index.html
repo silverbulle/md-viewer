@@ -1355,6 +1355,7 @@
 
     // ===== Sidebar Tabs & TOC =====
     let currentTab = 'files';
+    let tocHeadings = []; // [{ tocItem, headingEl }] populated by buildTOC
 
     function switchTab(tab) {
       currentTab = tab;
@@ -1387,40 +1388,94 @@
       if (headings.length === 0) {
         tocContainer.innerHTML = '<div id="toc-empty">No headings found</div>';
         outlineTab.disabled = false;
+        tocHeadings = [];
         return;
       }
 
+      // Match each source heading to its rendered DOM element (by level + occurrence)
+      const content = document.getElementById('content');
+      const domHeadings = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      const levelCounters = {};
+      const domByLevel = [];
+      domHeadings.forEach(el => {
+        const lvl = parseInt(el.tagName[1]);
+        domByLevel.push({ el, level: lvl, occ: levelCounters[lvl] || 0 });
+        levelCounters[lvl] = (levelCounters[lvl] || 0) + 1;
+      });
+
       tocContainer.innerHTML = '';
+      tocHeadings = [];
       headings.forEach((h, idx) => {
+        // Count occurrence index among same-level source headings
+        let sameLevelBefore = 0;
+        for (let i = 0; i < idx; i++) {
+          if (headings[i].level === h.level) sameLevelBefore++;
+        }
+        // Find matching DOM heading
+        let headingEl = null;
+        for (const d of domByLevel) {
+          if (d.level === h.level && d.occ === sameLevelBefore) {
+            headingEl = d.el;
+            break;
+          }
+        }
+        if (!headingEl) return;
+
         const item = document.createElement('div');
         item.className = `toc-item toc-h${h.level}`;
         item.textContent = h.text;
         item.addEventListener('click', () => {
-          tocContainer.querySelectorAll('.toc-item').forEach(el => el.classList.remove('active'));
-          item.classList.add('active');
-          // Find matching heading in DOM by level + text, using idx-th occurrence
-          const content = document.getElementById('content');
-          const domHeadings = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
-          // Count which occurrence this is among same-level headings
-          let sameLevelBefore = 0;
-          for (let i = 0; i < idx; i++) {
-            if (headings[i].level === h.level) sameLevelBefore++;
-          }
-          let found = 0;
-          for (const el of domHeadings) {
-            if (parseInt(el.tagName[1]) === h.level) {
-              if (found === sameLevelBefore) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                break;
-              }
-              found++;
-            }
-          }
+          headingEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Highlight will be updated by scroll handler; force immediate update
+          updateActiveTOC(headingEl);
         });
         tocContainer.appendChild(item);
+        tocHeadings.push({ tocItem: item, headingEl });
       });
 
       outlineTab.disabled = false;
+    }
+
+    // Update the active (highlighted) TOC item based on scroll position
+    function updateActiveTOC(triggerEl) {
+      if (tocHeadings.length === 0) return;
+      const wrapper = document.getElementById('content-wrapper');
+      const scrollTop = wrapper.scrollTop;
+      const viewportH = wrapper.clientHeight;
+      // Threshold: a heading is "active" once it crosses ~1/4 down the viewport
+      const threshold = viewportH * 0.25;
+
+      let activeEl = null;
+      for (const { tocItem, headingEl } of tocHeadings) {
+        const rect = headingEl.getBoundingClientRect();
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const top = rect.top - wrapperRect.top;
+        if (top <= threshold) {
+          activeEl = tocItem;
+        } else {
+          break;
+        }
+      }
+
+      // If none above threshold (top of doc), highlight first
+      if (!activeEl && tocHeadings.length > 0) activeEl = tocHeadings[0].tocItem;
+
+      if (activeEl) {
+        const changed = !activeEl.classList.contains('active');
+        if (changed) {
+          tocHeadings.forEach(({ tocItem }) => tocItem.classList.remove('active'));
+          activeEl.classList.add('active');
+          // Keep active item visible in the TOC scroll area
+          const tocContainer = document.getElementById('toc-container');
+          const itemRect = activeEl.getBoundingClientRect();
+          const containerRect = tocContainer.getBoundingClientRect();
+          if (itemRect.top < containerRect.top) {
+            tocContainer.scrollTop -= (containerRect.top - itemRect.top);
+          } else if (itemRect.bottom > containerRect.bottom) {
+            tocContainer.scrollTop += (itemRect.bottom - containerRect.bottom);
+          }
+        }
+      }
     }
 
     // ===== Search Highlight in Content =====
@@ -1538,6 +1593,11 @@
         // Build TOC from markdown source (before hljs to avoid dependency)
         buildTOC(data.content);
 
+        // Auto-switch to Outline tab when opening a file
+        if (tocHeadings.length > 0) {
+          switchTab('outline');
+        }
+
         // Syntax highlight code blocks (skip mermaid blocks)
         content.querySelectorAll('pre code').forEach(block => {
           if (block.classList.contains('language-mermaid')) return;
@@ -1570,6 +1630,9 @@
         } else {
           wrapper.scrollTop = 0;
         }
+
+        // Sync TOC highlight to current scroll position (after any anchor jump settles)
+        requestAnimationFrame(() => requestAnimationFrame(() => updateActiveTOC()));
       } catch (err) {
         content.innerHTML = `<h1>Error</h1><p>${err.message}</p>`;
         content.style.display = 'block';
@@ -1665,6 +1728,17 @@
         e.preventDefault();
         navigateForward();
       }
+    });
+
+    // ===== TOC scroll-spy: highlight current heading in Outline =====
+    let tocScrollTimer = null;
+    document.getElementById('content-wrapper').addEventListener('scroll', () => {
+      if (tocHeadings.length === 0) return;
+      if (tocScrollTimer) return; // throttle: one update per frame
+      tocScrollTimer = requestAnimationFrame(() => {
+        tocScrollTimer = null;
+        updateActiveTOC();
+      });
     });
 
     // ===== Search =====
