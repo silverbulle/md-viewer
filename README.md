@@ -157,6 +157,11 @@ build.bat
 
 ## 更新日志
 
+### v1.7 — 文件夹选择器路径修复
+- **64 位 PIDL 截断修复**: 64 位 Python 打包的 exe 中，`SHBrowseForFolder` 默认 `c_long` 返回值会截断 64 位 PIDL 指针，导致 `SHGetPathFromIDListW` 拿到损坏指针、路径取空——选完目录不生效。改用显式 `W` 变体 + `restype=c_void_p` 指针安全传递，32/64 位均正确
+- **BROWSEINFO 修正**: `pszDisplayName` 改为 `c_wchar_p`（Unicode），与 W 变体一致
+- **错误可见化**: `pick_folder` 异常不再静默吞掉，写入 stderr 便于排查
+
 ### v1.6 — 端口绑定健壮性
 - **端口自动回退**: 请求端口绑定时（WinError 10013 等），自动尝试备用端口（8080 → 8181 → 8484 → 9000 → 3000），不再直接崩溃
 - **清晰报错**: 全部端口失败时输出根因和排查命令（`netsh interface ipv4 show excludedportrange protocol=tcp`）

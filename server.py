@@ -35,7 +35,7 @@ def pick_folder():
             _fields_ = [
                 ("hwndOwner", ctypes.c_void_p),
                 ("pidlRoot", ctypes.c_void_p),
-                ("pszDisplayName", ctypes.c_char * 260),
+                ("pszDisplayName", ctypes.c_wchar_p),
                 ("lpszTitle", ctypes.c_wchar_p),
                 ("ulFlags", ctypes.c_uint),
                 ("lpfn", ctypes.c_void_p),
@@ -46,6 +46,24 @@ def pick_folder():
         BIF_RETURNONLYFSDIRS = 0x0001
         BIF_NEWDIALOGSTYLE = 0x0040
 
+        # Use explicit W (Unicode) variants and pointer-correct restypes.
+        # On 64-bit Python the default c_long restype truncates the 64-bit PIDL
+        # returned by SHBrowseForFolderW, causing SHGetPathFromIDListW to receive
+        # a corrupted pointer and silently return an empty path. Setting
+        # restype=c_void_p (and matching argtypes) makes the PIDL round-trip
+        # correctly on both 32- and 64-bit interpreters.
+        SHBrowseForFolderW = shell32.SHBrowseForFolderW
+        SHBrowseForFolderW.restype = ctypes.c_void_p
+        SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFO)]
+
+        SHGetPathFromIDListW = shell32.SHGetPathFromIDListW
+        SHGetPathFromIDListW.restype = ctypes.c_int
+        SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+
+        ILFree = shell32.ILFree
+        ILFree.restype = None
+        ILFree.argtypes = [ctypes.c_void_p]
+
         bi = BROWSEINFO()
         bi.hwndOwner = user32.GetForegroundWindow()  # Attach to focused window
         bi.lpszTitle = "Select Markdown Directory"
@@ -53,16 +71,16 @@ def pick_folder():
 
         ole32.CoInitialize(None)
         try:
-            pidl = shell32.SHBrowseForFolder(ctypes.byref(bi))
+            pidl = SHBrowseForFolderW(ctypes.byref(bi))
             if pidl:
                 path_buf = ctypes.create_unicode_buffer(260)
-                shell32.SHGetPathFromIDListW(pidl, path_buf)
-                shell32.ILFree(pidl)
-                return str(Path(path_buf.value))
+                if SHGetPathFromIDListW(pidl, path_buf):
+                    return str(Path(path_buf.value))
+                ILFree(pidl)
         finally:
             ole32.CoUninitialize()
-    except Exception:
-        pass
+    except Exception as e:
+        sys.stderr.write(f"[MD Browser] pick_folder error: {e}\n")
     return None
 
 
