@@ -558,6 +558,94 @@
       text-align: center;
     }
 
+    /* ===== Search History ===== */
+    #search-history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px 4px;
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    #search-history-clear {
+      background: none;
+      border: none;
+      color: #999;
+      font-size: 11px;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    #search-history-clear:hover {
+      color: #f38ba8;
+    }
+
+    .search-history-item {
+      display: flex;
+      align-items: center;
+      padding: 7px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f5f5f5;
+      transition: background 0.1s;
+    }
+
+    .search-history-item:hover {
+      background: #f5f8ff;
+    }
+
+    .search-history-item.active {
+      background: #eef4ff;
+    }
+
+    .search-history-item .hist-icon {
+      margin-right: 8px;
+      font-size: 12px;
+      color: #bbb;
+      flex-shrink: 0;
+    }
+
+    .search-history-item .hist-text {
+      flex: 1;
+      font-size: 13px;
+      color: #444;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .search-history-item .hist-del {
+      margin-left: 8px;
+      width: 18px;
+      height: 18px;
+      border: none;
+      background: none;
+      color: #ccc;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .search-history-item .hist-del:hover {
+      background: #f0f0f0;
+      color: #f38ba8;
+    }
+
+    #search-history-empty {
+      padding: 16px 12px;
+      font-size: 12px;
+      color: #bbb;
+      text-align: center;
+    }
+
     #content-wrapper {
       flex: 1;
       overflow-y: auto;
@@ -1746,28 +1834,7 @@
     const searchInput = document.getElementById('search-input');
     const searchResults = document.getElementById('search-results');
 
-    searchInput.addEventListener('input', () => {
-      clearTimeout(searchTimer);
-      const q = searchInput.value.trim();
-      if (q.length < 2) {
-        searchResults.classList.remove('visible');
-        searchResults.innerHTML = '';
-        return;
-      }
-      searchTimer = setTimeout(() => doSearch(q), 250);
-    });
-
-    searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        clearTimeout(searchTimer);
-        triggerSearch();
-      }
-      if (e.key === 'Escape') {
-        searchResults.classList.remove('visible');
-        searchInput.blur();
-      }
-    });
+    // (search input/keydown listeners are registered below in the Search History section)
 
     function triggerSearch() {
       clearTimeout(searchTimer);
@@ -1777,6 +1844,7 @@
         searchResults.innerHTML = '';
         return;
       }
+      addHistory(q);   // record explicit searches (Enter / Search button / history reuse)
       doSearch(q);
     }
 
@@ -1845,6 +1913,142 @@
       searchResults.classList.remove('visible');
       searchInput.value = '';
       loadFile(path, null, query);
+    }
+
+    // ===== Search History =====
+    const HISTORY_KEY = 'md-browser-search-history';
+    const HISTORY_MAX = 8;
+    let historyActiveIndex = -1; // keyboard-selected index in history list
+
+    function getHistory() {
+      try {
+        const raw = localStorage.getItem(HISTORY_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (_) { return []; }
+    }
+
+    function saveHistory(list) {
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch (_) {}
+    }
+
+    function addHistory(query) {
+      const q = query.trim();
+      if (!q) return;
+      let list = getHistory().filter(item => item !== q); // dedupe + remove old position
+      list.unshift(q);
+      if (list.length > HISTORY_MAX) list = list.slice(0, HISTORY_MAX);
+      saveHistory(list);
+    }
+
+    function removeHistory(query) {
+      saveHistory(getHistory().filter(item => item !== query));
+      showHistory();
+    }
+
+    function clearHistory() {
+      saveHistory([]);
+      showHistory();
+    }
+
+    // Render the history dropdown (shown when search box is focused & empty)
+    function showHistory() {
+      const list = getHistory();
+      historyActiveIndex = -1;
+      let html = '';
+      if (list.length === 0) {
+        html = '<div id="search-history-empty">No search history yet</div>';
+      } else {
+        html = '<div id="search-history-header"><span>Recent</span>' +
+               '<button id="search-history-clear" onclick="clearHistory()">Clear all</button></div>';
+        html += list.map((q) =>
+          `<div class="search-history-item" onclick="useHistory('${escapeAttr(q)}')" data-q="${escapeAttr(q)}">
+             <span class="hist-icon">&#128337;</span>
+             <span class="hist-text">${escapeHtml(q)}</span>
+             <button class="hist-del" onclick="event.stopPropagation(); removeHistory('${escapeAttr(q)}')">&times;</button>
+           </div>`
+        ).join('');
+      }
+      searchResults.innerHTML = html;
+      searchResults.classList.add('visible');
+    }
+
+    function hideResults() {
+      searchResults.classList.remove('visible');
+      searchResults.innerHTML = '';
+      historyActiveIndex = -1;
+    }
+
+    function useHistory(query) {
+      searchInput.value = query;
+      hideResults();
+      triggerSearch();
+    }
+
+    function escapeAttr(s) {
+      // safe for use inside single-quoted HTML attribute and onclick string
+      return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Show history when focusing the (empty) search box
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim().length === 0) {
+        showHistory();
+      }
+    });
+
+    // Update the visible list as the user types
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const q = searchInput.value.trim();
+      if (q.length === 0) {
+        showHistory();
+        return;
+      }
+      if (q.length < 2) {
+        hideResults();
+        return;
+      }
+      searchTimer = setTimeout(() => doSearch(q), 250);
+    });
+
+    // Arrow-key navigation within the history list + Enter handling
+    searchInput.addEventListener('keydown', (e) => {
+      // Only navigate history when the dropdown shows history items
+      const histItems = searchResults.querySelectorAll('.search-history-item');
+      if (histItems.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          historyActiveIndex = Math.min(historyActiveIndex + 1, histItems.length - 1);
+          highlightHistoryItem(histItems);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          historyActiveIndex = Math.max(historyActiveIndex - 1, -1);
+          highlightHistoryItem(histItems);
+          return;
+        }
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(searchTimer);
+        if (historyActiveIndex >= 0 && historyActiveIndex < histItems.length) {
+          useHistory(histItems[historyActiveIndex].dataset.q);
+        } else {
+          triggerSearch();
+        }
+      }
+      if (e.key === 'Escape') {
+        hideResults();
+        searchInput.blur();
+      }
+    });
+
+    function highlightHistoryItem(items) {
+      items.forEach((el, i) => el.classList.toggle('active', i === historyActiveIndex));
+      if (historyActiveIndex >= 0 && items[historyActiveIndex]) {
+        items[historyActiveIndex].scrollIntoView({ block: 'nearest' });
+      }
     }
 
     // ===== Tree Loading =====
