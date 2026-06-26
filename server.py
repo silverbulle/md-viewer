@@ -11,6 +11,7 @@ import re
 import sys
 import json
 import socket
+import atexit
 import argparse
 import webbrowser
 import threading
@@ -392,6 +393,57 @@ class MDHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def lock_path():
+    """Path to the single-instance lock file (in the user's home dir)."""
+    return Path.home() / "md-browser.lock"
+
+
+def check_existing_instance():
+    """Return the running instance's port if one is alive, else None.
+
+    The lock file stores 'port' (and pid). We probe the port to confirm the
+    instance is actually serving — a stale lock from a crashed process is
+    detected and ignored so the new instance can start cleanly.
+    """
+    p = lock_path()
+    try:
+        if not p.exists():
+            return None
+        raw = p.read_text(encoding="utf-8").strip()
+        port = int(raw.split(":")[0])
+    except (ValueError, OSError):
+        return None
+
+    # Probe: is something actually listening there (and answering like us)?
+    try:
+        s = socket.create_connection(("127.0.0.1", port), timeout=0.5)
+        s.close()
+        return port
+    except OSError:
+        # Nothing listening — stale lock. Remove it.
+        try:
+            p.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def write_lock(port):
+    """Write the lock file with the chosen port (and pid for debugging)."""
+    try:
+        lock_path().write_text(f"{port}:{os.getpid()}", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def remove_lock():
+    """Remove the lock file on clean shutdown."""
+    try:
+        lock_path().unlink()
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description='Markdown File Browser')
     parser.add_argument('directory', nargs='?', default=None,
@@ -402,8 +454,30 @@ def main():
                         help='Host to bind to (default: localhost)')
     parser.add_argument('--no-browser', action='store_true',
                         help='Do not auto-open browser on startup')
+    parser.add_argument('--multi', action='store_true',
+                        help='Allow multiple instances (skip single-instance check)')
 
     args = parser.parse_args()
+
+    # Single-instance check: if another instance is already running, tell the
+    # user which port it's on (and optionally just focus it) instead of opening
+    # a second one. A `--multi` escape hatch exists for forced parallel runs.
+    if not args.multi:
+        existing_port = check_existing_instance()
+        if existing_port is not None:
+            url = f"http://localhost:{existing_port}"
+            msg = (f"MD Browser 已在运行中（端口 {existing_port}）。\n\n"
+                   f"地址：{url}\n\n"
+                   f"点击“确定”打开已运行的窗口。")
+            log(f"[INFO] Another instance is running on port {existing_port}; not starting a second one.")
+            # MB_OK (0x0) gives a single OK button that also opens the browser
+            try:
+                if sys.platform == "win32":
+                    ctypes.windll.user32.MessageBoxW(0, msg, "MD Browser 已运行", 0x40)
+                webbrowser.open(url)
+            except Exception:
+                pass
+            sys.exit(0)
 
     # Resolve directory if provided
     if args.directory:
@@ -466,6 +540,10 @@ def main():
     if chosen_port != args.port:
         log(f"  [INFO] Port {args.port} unavailable, using {chosen_port} instead.")
 
+    # Register this instance: write the lock so subsequent launches detect us.
+    write_lock(chosen_port)
+    atexit.register(remove_lock)
+
     actual_host = 'localhost' if args.host == '0.0.0.0' else args.host
     url = f"http://{actual_host}:{chosen_port}"
 
@@ -502,6 +580,9 @@ def main():
     except KeyboardInterrupt:
         log("Shutting down...")
         server.shutdown()
+    finally:
+        # Clean up the single-instance lock on exit
+        remove_lock()
 
 
 if __name__ == '__main__':
