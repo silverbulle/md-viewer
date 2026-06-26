@@ -11,6 +11,10 @@
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <!-- Mermaid.js for diagram rendering -->
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <!-- KaTeX for math formula rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   <style>
     :root {
       --sidebar-width: 280px;
@@ -754,6 +758,29 @@
       font-size: 13px;
     }
 
+    /* ===== Math Formulas (KaTeX) ===== */
+    .math-display {
+      display: block;
+      text-align: center;
+      margin: 18px 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 2px 0;
+    }
+
+    .math-inline {
+      display: inline;
+      vertical-align: baseline;
+    }
+
+    /* KaTeX render-error fallback styling */
+    .math-display .katex-error,
+    .math-inline .katex-error {
+      color: #f38ba8;
+      font-family: 'Consolas', monospace;
+      font-size: 0.9em;
+    }
+
     /* ===== Mermaid Diagrams ===== */
     .mermaid-container {
       background: var(--code-bg);
@@ -1143,6 +1170,123 @@
       sequence: { mirrorActors: false, useMaxWidth: false },
       mindmap: { padding: 16, useMaxWidth: false }
     });
+
+    // ===== Math formula handling (KaTeX) =====
+    // Math syntax ($...$, $$...$$) clashes with Markdown (underscores -> italic,
+    // asterisks -> bold, etc.), so we extract formulas BEFORE marked renders,
+    // replacing them with opaque placeholders, then restore + render with KaTeX
+    // AFTER rendering. Placeholders use a shape that marked leaves untouched.
+    const mathStore = []; // {placeholder, tex, display}
+    let mathCounter = 0;
+
+    function extractMath(src) {
+      mathStore.length = 0;
+      mathCounter = 0;
+      if (!src) return src;
+
+      // Split source into segments, separating fenced code blocks and inline
+      // code from prose. Math is only extracted in prose segments so the code
+      // blocks pass through marked untouched (preserving ``` / ` rendering).
+      // Token shape: ['prose', 'code', 'prose', 'code', ...]
+      const segments = [];
+      let rest = src;
+      const fenceRe = /```[\s\S]*?```/g;
+      let last = 0;
+      let m;
+      const parts = [];
+      while ((m = fenceRe.exec(rest)) !== null) {
+        if (m.index > last) parts.push(['prose', rest.slice(last, m.index)]);
+        parts.push(['code', m[0]]);
+        last = m.index + m[0].length;
+      }
+      if (last < rest.length) parts.push(['prose', rest.slice(last)]);
+      if (parts.length === 0) parts.push(['prose', rest]);
+
+      const out = parts.map(([type, seg]) => {
+        if (type === 'code') {
+          // Still protect inline math-like $ inside code? No — code is literal.
+          // But inline code within prose needs splitting too.
+          return seg;
+        }
+        // prose: split out inline `code` runs, only process math in the rest
+        const sub = [];
+        let r = seg;
+        let li = 0;
+        const inlineRe = /`[^`\n]+`/g;
+        let im;
+        const iparts = [];
+        while ((im = inlineRe.exec(r)) !== null) {
+          if (im.index > li) iparts.push(['p', r.slice(li, im.index)]);
+          iparts.push(['c', im[0]]);
+          li = im.index + im[0].length;
+        }
+        if (li < r.length) iparts.push(['p', r.slice(li)]);
+        if (iparts.length === 0) iparts.push(['p', r]);
+
+        return iparts.map(([t, s]) => {
+          if (t === 'c') return s;
+          // Block math: $$...$$ (may span lines)
+          s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
+            const placeholder = `MATHBLOCK${mathCounter++}`;
+            mathStore.push({ placeholder, tex: tex.trim(), display: true });
+            return `\n\n@@${placeholder}@@\n\n`;
+          });
+          // Inline math: $...$  (not \$, not $$, single line, non-empty, no leading/trailing space)
+          s = s.replace(/(^|[^\\$])\$(?!\s)([^\n$]+?)(?<!\s)\$(?!\d)/g, (mm, pre, tex) => {
+            const placeholder = `MATHINLINE${mathCounter++}`;
+            mathStore.push({ placeholder, tex, display: false });
+            return `${pre}@@${placeholder}@@`;
+          });
+          return s;
+        }).join('');
+      }).join('');
+
+      return out;
+    }
+
+    function renderMath() {
+      const content = document.getElementById('content');
+      if (!content || mathStore.length === 0) return;
+
+      // Placeholders survive as text "@@MATHxxx@@". Walk text nodes and replace.
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+      const targets = [];
+      while (walker.nextNode()) {
+        if (/@@MATH(BLOCK|INLINE)\d+@@/.test(walker.currentNode.nodeValue)) {
+          targets.push(walker.currentNode);
+        }
+      }
+
+      for (const node of targets) {
+        const parts = node.nodeValue.split(/(@@MATH(?:BLOCK|INLINE)\d+@@)/);
+        if (parts.length <= 1) continue;
+        const frag = document.createDocumentFragment();
+        for (const part of parts) {
+          const m = part.match(/^@@MATH(BLOCK|INLINE)(\d+)@@$/);
+          if (m) {
+            const entry = mathStore.find(e => e.placeholder === `MATH${m[1]}${m[2]}`);
+            if (entry) {
+              const span = document.createElement('span');
+              span.className = entry.display ? 'math-display' : 'math-inline';
+              try {
+                katex.render(entry.tex, span, {
+                  displayMode: entry.display,
+                  throwOnError: false,
+                  strict: false,
+                  trust: false
+                });
+              } catch (e) {
+                span.textContent = entry.display ? `$$${entry.tex}$$` : `$${entry.tex}$`;
+              }
+              frag.appendChild(span);
+              continue;
+            }
+          }
+          if (part) frag.appendChild(document.createTextNode(part));
+        }
+        node.parentNode.replaceChild(frag, node);
+      }
+    }
 
     // Global counter for unique mermaid element IDs
     let mermaidCounter = 0;
@@ -1579,6 +1723,8 @@
         const node = walker.currentNode;
         // Skip code blocks (they have their own highlighting)
         if (node.parentElement && node.parentElement.closest('pre')) continue;
+        // Skip KaTeX formula internals — highlighting would break rendered math
+        if (node.parentElement && node.parentElement.closest('.katex')) continue;
         const text = node.textContent;
         const lowerText = text.toLowerCase();
         let idx = lowerText.indexOf(lowerTerm);
@@ -1674,9 +1820,13 @@
           return `<span>${part}</span><span>/</span>`;
         }).join('');
 
-        // Render markdown
-        content.innerHTML = marked.parse(data.content);
+        // Render markdown (extract math first so marked doesn't mangle formulas)
+        const mathSrc = extractMath(data.content);
+        content.innerHTML = marked.parse(mathSrc);
         content.style.display = 'block';
+
+        // Render math formulas (KaTeX) — must run after innerHTML is set
+        renderMath();
 
         // Build TOC from markdown source (before hljs to avoid dependency)
         buildTOC(data.content);

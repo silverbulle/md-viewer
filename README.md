@@ -41,7 +41,8 @@ python server.py ../001-network-protocols
 
 | 功能 | 说明 |
 |------|------|
-| **Markdown 渲染** | GFM 表格、代码语法高亮、Mermaid 图表、ASCII 图表 |
+| **Markdown 渲染** | GFM 表格、代码语法高亮、Mermaid 图表、数学公式、ASCII 图表 |
+| **数学公式** | 行内 `$...$` 与块级 `$$...$$`，基于 KaTeX 渲染 LaTeX 语法（`\frac`、`\sum`、`\text` 等） |
 | **Mermaid 图表** | 支持流程图、时序图、脑图、甘特图、类图、状态图等所有 Mermaid 图表类型，渲染失败时显示错误信息和源码 |
 | **交叉引用跳转** | 点击文档内 `.md` 链接直接跳转到目标文件 |
 | **锚点跳转** | 支持 `file.md#heading` 跨文件锚点和 `#heading` 同页面锚点 |
@@ -124,6 +125,7 @@ python server.py ../001-network-protocols --host 0.0.0.0
 - [marked.js](https://marked.js.org/) — Markdown 渲染
 - [highlight.js](https://highlightjs.org/) — 代码语法高亮
 - [mermaid.js](https://mermaid.js.org/) — 图表渲染（流程图、时序图、脑图等）
+- [KaTeX](https://katex.org/) — 数学公式渲染（LaTeX 语法）
 
 ## 构建 exe
 
@@ -157,6 +159,14 @@ build.bat
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
 
 ## 更新日志
+
+### v1.9 — 数学公式支持（KaTeX）
+- **行内公式**: `$...$` 渲染为行内数学公式（如 `$a_i$`、`$\frac{1}{2}$`）
+- **块级公式**: `$$...$$` 渲染为居中独立公式（可跨行），如 `$$\sum_{i=1}^n x_i$$`
+- **完整 LaTeX 语法**: 支持 `\text{}`、`\ge`、`\sum`、`\frac{}{}`、`\times`、上下标、希腊字母等
+- **智能识别**: 代码块/行内代码内的 `$` 不误识别；`$100`（价格）、`\$50`（转义）不触发公式
+- **渲染保护**: 公式在 marked 渲染前提取为占位符，避免 `_`、`*`、`{}` 被 Markdown 语法破坏
+- **搜索兼容**: 搜索高亮跳过 KaTeX 内部，不破坏已渲染公式
 
 ### v1.8 — 搜索历史记忆
 - **历史记录**: 搜索词自动存入 localStorage，最多保留 8 条，去重置顶
