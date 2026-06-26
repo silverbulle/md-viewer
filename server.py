@@ -364,9 +364,52 @@ def main():
     else:
         MDHandler.base_directory = None
 
-    # Start server
-    server = ThreadingHTTPServer((args.host, args.port), MDHandler)
-    url = f"http://{'localhost' if args.host == '0.0.0.0' else args.host}:{args.port}"
+    # Start server — try the requested port, fall back to alternatives on failure.
+    # Windows WinError 10013 (WSAEACCES) usually means the port is in a Hyper-V /
+    # WSL2 reserved range, occupied, or blocked by firewall. Auto-fallback keeps
+    # the exe usable without the user having to debug port issues.
+    candidate_ports = []
+    if args.port:
+        candidate_ports.append(args.port)
+    if args.port != DEFAULT_PORT:
+        candidate_ports.append(DEFAULT_PORT)
+    # Common fallbacks unlikely to be in Windows excluded-port ranges
+    candidate_ports.extend([8181, 8484, 9000, 3000])
+
+    chosen_port = None
+    server = None
+    last_error = None
+    for port in candidate_ports:
+        try:
+            server = ThreadingHTTPServer((args.host, port), MDHandler)
+            chosen_port = port
+            break
+        except (OSError, OverflowError, ValueError) as e:
+            # OSError → WinError 10013 (reserved/blocked/in-use) or in-use
+            # OverflowError/ValueError → port out of valid range (0-65535)
+            last_error = e
+            continue
+
+    if server is None:
+        print("")
+        print("  [ERROR] Could not bind to any port.")
+        print(f"  Last error: {last_error}")
+        print("")
+        print("  This is usually WinError 10013 on Windows, caused by:")
+        print("    - The port is in a Hyper-V / WSL2 / Docker reserved range")
+        print("      Check with:  netsh interface ipv4 show excludedportrange protocol=tcp")
+        print("    - The port is already in use by another program")
+        print("    - Firewall / antivirus is blocking it")
+        print("")
+        print("  Fix: run with an explicit free port, e.g.:")
+        print("    md-browser.exe --port 8484")
+        sys.exit(1)
+
+    if chosen_port != args.port:
+        print(f"  [INFO] Port {args.port} unavailable, using {chosen_port} instead.")
+
+    actual_host = 'localhost' if args.host == '0.0.0.0' else args.host
+    url = f"http://{actual_host}:{chosen_port}"
 
     print(f"")
     print(f"  +--------------------------------------+")
@@ -388,7 +431,7 @@ def main():
             bind_host = '127.0.0.1' if args.host == '0.0.0.0' else args.host
             for _ in range(50):  # up to 5 seconds
                 try:
-                    s = socket.create_connection((bind_host, args.port), timeout=0.1)
+                    s = socket.create_connection((bind_host, chosen_port), timeout=0.1)
                     s.close()
                     webbrowser.open(url)
                     return

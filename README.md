@@ -66,6 +66,23 @@ python server.py ../001-network-protocols
 | **聚焦搜索** | `Ctrl + K` | 快速聚焦搜索框 |
 | **关闭搜索** | `Esc` | 关闭搜索结果下拉 |
 
+## 常见问题
+
+### 启动报 `WinError 10013` / 端口绑定失败
+
+Windows 上端口 8080 等可能被 **Hyper-V / WSL2 / Docker Desktop** 预留或占用，导致套接字绑定抛 `PermissionError: WinError 10013`。
+
+- **自动处理**：v1.6 起程序会自动回退到备用端口（8181 / 8484 / 9000 / 3000），通常无需干预。
+- **手动指定**：用 `--port` 指定一个空闲端口：
+  ```bash
+  md-browser.exe --port 8484
+  ```
+- **排查保留端口**（管理员权限）：
+  ```bash
+  netsh interface ipv4 show excludedportrange protocol=tcp
+  ```
+  若目标端口落在某个 `Start Port - End Port` 区间内，说明被系统保留，换一个区外的端口即可。
+
 ## 命令行参数
 
 | 参数 | 说明 | 默认值 |
@@ -139,6 +156,11 @@ build.bat
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
 
 ## 更新日志
+
+### v1.6 — 端口绑定健壮性
+- **端口自动回退**: 请求端口绑定时（WinError 10013 等），自动尝试备用端口（8080 → 8181 → 8484 → 9000 → 3000），不再直接崩溃
+- **清晰报错**: 全部端口失败时输出根因和排查命令（`netsh interface ipv4 show excludedportrange protocol=tcp`）
+- **异常覆盖**: 捕获 OSError / OverflowError / ValueError，兼容端口越界等异常
 
 ### v1.5 — Mermaid 图表支持
 - **Mermaid 渲染**: 支持所有 Mermaid 图表类型（流程图、时序图、脑图、甘特图、类图、状态图等）
