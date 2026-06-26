@@ -52,6 +52,7 @@
 
     /* ===== Sidebar ===== */
     #sidebar {
+      position: relative;
       width: var(--sidebar-width);
       min-width: var(--sidebar-width);
       background: var(--sidebar-bg);
@@ -60,6 +61,45 @@
       flex-direction: column;
       overflow: hidden;
       border-right: 1px solid rgba(255,255,255,0.05);
+      flex-shrink: 0;
+      transition: width 0.18s ease, min-width 0.18s ease;
+    }
+
+    /* Completely collapsed: main area fills the width */
+    #sidebar.hidden {
+      display: none;
+    }
+
+    /* Drag handle on the sidebar's right edge */
+    #sidebar-resizer {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      width: 6px;
+      height: 100%;
+      cursor: col-resize;
+      z-index: 50;
+      background: transparent;
+    }
+
+    #sidebar-resizer:hover,
+    #sidebar-resizer:active {
+      background: var(--sidebar-accent);
+      opacity: 0.5;
+    }
+
+    /* While dragging: disable text selection and pointer interference */
+    body.resizing {
+      user-select: none;
+      cursor: col-resize !important;
+    }
+
+    body.resizing * {
+      pointer-events: none;
+    }
+
+    body.resizing #sidebar-resizer {
+      pointer-events: auto;
     }
 
     #sidebar-header {
@@ -395,6 +435,11 @@
     #nav-buttons {
       display: flex;
       gap: 2px;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
+    #sidebar-toggle {
       margin-right: 12px;
       flex-shrink: 0;
     }
@@ -1075,10 +1120,12 @@
     </div>
     <div id="tree-container"></div>
     <div id="toc-container"></div>
+    <div id="sidebar-resizer" title="Drag to resize"></div>
   </div>
 
   <div id="main">
     <div id="topbar">
+      <button class="nav-btn" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
       <div id="breadcrumb">
         <span>Select a file from the sidebar</span>
       </div>
@@ -1115,6 +1162,86 @@
     let navHistory = [];
     let navIndex = -1;
     let navSkipPush = false;
+
+    // ===== Sidebar resize/hide =====
+    const SIDEBAR_WIDTH_KEY = 'md-browser-sidebar-width';
+    const SIDEBAR_HIDDEN_KEY = 'md-browser-sidebar-hidden';
+    const SIDEBAR_MIN = 180, SIDEBAR_MAX = 520, SIDEBAR_DEFAULT = 280;
+    let isResizing = false;
+
+    function applySidebarWidth(px) {
+      const sidebar = document.getElementById('sidebar');
+      if (!sidebar) return;
+      sidebar.style.width = px + 'px';
+      sidebar.style.minWidth = px + 'px'; // override CSS so it can shrink below the default
+      document.documentElement.style.setProperty('--sidebar-width', px + 'px');
+    }
+
+    function setSidebarHidden(hidden) {
+      const sidebar = document.getElementById('sidebar');
+      const toggle = document.getElementById('sidebar-toggle');
+      if (!sidebar) return;
+      sidebar.classList.toggle('hidden', hidden);
+      if (toggle) toggle.textContent = hidden ? '≫' : '☰';
+      try { localStorage.setItem(SIDEBAR_HIDDEN_KEY, hidden ? '1' : '0'); } catch (_) {}
+    }
+
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      setSidebarHidden(!sidebar.classList.contains('hidden'));
+    }
+
+    function restoreSidebar() {
+      // Restore width (clamp + NaN-safe)
+      let px = SIDEBAR_DEFAULT;
+      try {
+        const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+        if (raw !== null) {
+          const n = parseInt(raw, 10);
+          if (!Number.isNaN(n)) px = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, n));
+        }
+      } catch (_) {}
+      applySidebarWidth(px);
+
+      // Restore hidden state
+      let hidden = false;
+      try { hidden = localStorage.getItem(SIDEBAR_HIDDEN_KEY) === '1'; } catch (_) {}
+      setSidebarHidden(hidden);
+    }
+
+    // Drag-to-resize handlers
+    (function initResizer() {
+      const resizer = document.getElementById('sidebar-resizer');
+      if (!resizer) return;
+
+      resizer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isResizing = true;
+        document.body.classList.add('resizing');
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        let px = e.clientX;
+        px = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, px));
+        applySidebarWidth(px);
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (!isResizing) return;
+        isResizing = false;
+        document.body.classList.remove('resizing');
+        // Persist final width
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+          const w = parseInt(sidebar.style.width, 10);
+          if (!Number.isNaN(w)) {
+            try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w)); } catch (_) {}
+          }
+        }
+      });
+    })();
 
     // ===== Configure marked.js =====
     marked.setOptions({
@@ -2281,6 +2408,9 @@
 
     // ===== Initialization =====
     async function init() {
+      // Restore sidebar width and hidden state first (independent of directory)
+      restoreSidebar();
+
       // Try to restore last opened directory
       const lastDir = localStorage.getItem('md-browser-last-dir');
 
