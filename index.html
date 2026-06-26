@@ -1244,9 +1244,21 @@
       return out;
     }
 
-    function renderMath() {
+    function renderMath(retryCount = 0) {
       const content = document.getElementById('content');
       if (!content || mathStore.length === 0) return;
+
+      // KaTeX loads from CDN; if it isn't ready yet, defer rendering until it is.
+      if (typeof katex === 'undefined') {
+        if (retryCount < 40) { // retry for up to ~20s
+          setTimeout(() => renderMath(retryCount + 1), 500);
+        } else {
+          // Give up waiting — fall back to showing raw LaTeX so nothing is lost
+          fallbackRawMath(content);
+          console.warn('[MD Browser] KaTeX failed to load; showing raw math.');
+        }
+        return;
+      }
 
       // Placeholders survive as text "@@MATHxxx@@". Walk text nodes and replace.
       const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
@@ -1257,6 +1269,7 @@
         }
       }
 
+      let rendered = 0;
       for (const node of targets) {
         const parts = node.nodeValue.split(/(@@MATH(?:BLOCK|INLINE)\d+@@)/);
         if (parts.length <= 1) continue;
@@ -1273,10 +1286,13 @@
                   displayMode: entry.display,
                   throwOnError: false,
                   strict: false,
-                  trust: false
+                  trust: false,
+                  output: 'html'
                 });
+                rendered++;
               } catch (e) {
                 span.textContent = entry.display ? `$$${entry.tex}$$` : `$${entry.tex}$`;
+                span.className += ' katex-error';
               }
               frag.appendChild(span);
               continue;
@@ -1284,9 +1300,49 @@
           }
           if (part) frag.appendChild(document.createTextNode(part));
         }
-        node.parentNode.replaceChild(frag, node);
+        if (node.parentNode) node.parentNode.replaceChild(frag, node);
+      }
+
+      // Safety net: if any placeholder survived (e.g. split across nodes),
+      // fall back to raw LaTeX text so users see the formula instead of "@@MATH...@@".
+      const w2 = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+      const remain = [];
+      while (w2.nextNode()) {
+        if (/@@MATH(BLOCK|INLINE)\d+@@/.test(w2.currentNode.nodeValue)) remain.push(w2.currentNode);
+      }
+      if (remain.length > 0) {
+        for (const node of remain) {
+          const txt = node.nodeValue;
+          const replaced = txt.replace(/@@MATH(BLOCK|INLINE)(\d+)@@/g, (mm, kind, num) => {
+            const entry = mathStore.find(e => e.placeholder === `MATH${kind}${num}`);
+            if (!entry) return mm;
+            return entry.display ? `$$${entry.tex}$$` : `$${entry.tex}$`;
+          });
+          if (replaced !== txt) node.nodeValue = replaced;
+        }
       }
     }
+
+    // Render raw LaTeX text (no KaTeX) as a fallback when KaTeX can't load
+    function fallbackRawMath(content) {
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+      const targets = [];
+      while (walker.nextNode()) {
+        if (/@@MATH(BLOCK|INLINE)\d+@@/.test(walker.currentNode.nodeValue)) {
+          targets.push(walker.currentNode);
+        }
+      }
+      for (const node of targets) {
+        const txt = node.nodeValue;
+        const replaced = txt.replace(/@@MATH(BLOCK|INLINE)(\d+)@@/g, (mm, kind, num) => {
+          const entry = mathStore.find(e => e.placeholder === `MATH${kind}${num}`);
+          if (!entry) return mm;
+          return entry.display ? `$$${entry.tex}$$` : `$${entry.tex}$`;
+        });
+        if (replaced !== txt) node.nodeValue = replaced;
+      }
+    }
+
 
     // Global counter for unique mermaid element IDs
     let mermaidCounter = 0;
