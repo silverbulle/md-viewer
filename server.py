@@ -21,6 +21,39 @@ from pathlib import Path
 
 DEFAULT_PORT = 8080
 
+# When packaged with --windowed, sys.stdout/stderr/stdin are None. Redirect
+# log output to a file so startup info and errors are still recoverable, and
+# surface fatal errors via a Windows message box (no console to print to).
+LOG_FILE = None
+if sys.stdout is None:
+    try:
+        LOG_FILE = open(Path.home() / "md-browser.log", "a", encoding="utf-8")
+    except Exception:
+        LOG_FILE = None
+
+
+def log(message=""):
+    """Write to stdout if available, otherwise to the log file."""
+    line = str(message) + "\n"
+    if sys.stdout is not None:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    elif LOG_FILE is not None:
+        try:
+            LOG_FILE.write(line)
+            LOG_FILE.flush()
+        except Exception:
+            pass
+
+
+def alert(message, title="MD Browser"):
+    """Show a Windows message box (used when there is no console)."""
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.user32.MessageBoxW(0, str(message), title, 0x10)
+        except Exception:
+            pass
+
 
 def pick_folder():
     """Open a native Windows folder picker dialog, return selected path or None."""
@@ -80,7 +113,7 @@ def pick_folder():
         finally:
             ole32.CoUninitialize()
     except Exception as e:
-        sys.stderr.write(f"[MD Browser] pick_folder error: {e}\n")
+        log(f"[MD Browser] pick_folder error: {e}")
     return None
 
 
@@ -355,8 +388,8 @@ class MDHandler(SimpleHTTPRequestHandler):
         self.wfile.write(content)
 
     def log_message(self, format, *args):
-        """Custom log format."""
-        sys.stderr.write(f"[MD Browser] {args[0]}\n")
+        """Suppress default HTTP request logging (no console in windowed mode)."""
+        pass
 
 
 def main():
@@ -376,7 +409,9 @@ def main():
     if args.directory:
         base_dir = Path(args.directory).expanduser().resolve()
         if not base_dir.exists() or not base_dir.is_dir():
-            print(f"Error: '{args.directory}' is not a valid directory")
+            msg = f"Error: '{args.directory}' is not a valid directory"
+            log(msg)
+            alert(msg + "\n\n请确认路径正确。")
             sys.exit(1)
         MDHandler.base_directory = str(base_dir)
     else:
@@ -409,39 +444,44 @@ def main():
             continue
 
     if server is None:
-        print("")
-        print("  [ERROR] Could not bind to any port.")
-        print(f"  Last error: {last_error}")
-        print("")
-        print("  This is usually WinError 10013 on Windows, caused by:")
-        print("    - The port is in a Hyper-V / WSL2 / Docker reserved range")
-        print("      Check with:  netsh interface ipv4 show excludedportrange protocol=tcp")
-        print("    - The port is already in use by another program")
-        print("    - Firewall / antivirus is blocking it")
-        print("")
-        print("  Fix: run with an explicit free port, e.g.:")
-        print("    md-browser.exe --port 8484")
+        msg_lines = [
+            "[ERROR] Could not bind to any port.",
+            f"Last error: {last_error}",
+            "",
+            "This is usually WinError 10013 on Windows, caused by:",
+            "  - The port is in a Hyper-V / WSL2 / Docker reserved range",
+            "    Check: netsh interface ipv4 show excludedportrange protocol=tcp",
+            "  - The port is already in use by another program",
+            "  - Firewall / antivirus is blocking it",
+            "",
+            "Fix: run with an explicit free port, e.g.:",
+            "  md-browser.exe --port 8484",
+        ]
+        msg = "\n".join(msg_lines)
+        log("")
+        log(msg)
+        alert(msg, "MD Browser — 启动失败")
         sys.exit(1)
 
     if chosen_port != args.port:
-        print(f"  [INFO] Port {args.port} unavailable, using {chosen_port} instead.")
+        log(f"  [INFO] Port {args.port} unavailable, using {chosen_port} instead.")
 
     actual_host = 'localhost' if args.host == '0.0.0.0' else args.host
     url = f"http://{actual_host}:{chosen_port}"
 
-    print(f"")
-    print(f"  +--------------------------------------+")
-    print(f"  |       MD Browser is running          |")
-    print(f"  +--------------------------------------+")
+    log("")
+    log("  +--------------------------------------+")
+    log("  |       MD Browser is running          |")
+    log("  +--------------------------------------+")
     if MDHandler.base_directory:
-        print(f"  |  Dir:  {MDHandler.base_directory}")
+        log(f"  |  Dir:  {MDHandler.base_directory}")
     else:
-        print(f"  |  Dir:  (select from browser UI)")
-    print(f"  |  URL:  {url}")
-    print(f"  +--------------------------------------+")
-    print(f"  |  Press Ctrl+C to stop                |")
-    print(f"  +--------------------------------------+")
-    print(f"")
+        log("  |  Dir:  (select from browser UI)")
+    log(f"  |  URL:  {url}")
+    log("  +--------------------------------------+")
+    log("  |  Close this window or kill process to stop")
+    log("  +--------------------------------------+")
+    log("")
 
     # Auto-open browser after server is confirmed ready
     if not args.no_browser:
@@ -460,7 +500,7 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        log("Shutting down...")
         server.shutdown()
 
 

@@ -129,12 +129,27 @@ python server.py ../001-network-protocols --host 0.0.0.0
 
 ## 构建 exe
 
+打包脚本 `build.py` 通过 **PyInstaller Python API** 调用打包（不直接用 `pyinstaller` 命令行），默认生成**无终端窗口**的 exe（双击启动不弹黑框，浏览器自动打开）。
+
 ```bash
 pip install pyinstaller
+
+# 方式一：直接运行打包脚本（推荐）
+python build.py              # 无终端窗口 exe（默认）
+python build.py --console    # 带终端窗口 exe（调试用，可看启动日志/Ctrl+C 停止）
+
+# 方式二：双击 build.bat（内部调用 build.py）
 build.bat
 ```
 
-生成的 `dist/md-browser.exe` 为单文件独立可执行程序（约 5.6MB），可拷贝到任意 Windows 机器直接使用，无需安装 Python。
+生成的 `dist/md-browser.exe` 为单文件独立可执行程序（约 5.9MB），可拷贝到任意 Windows 机器直接使用，无需安装 Python。
+
+**无终端模式说明**：
+- 双击启动不弹出黑框，浏览器自动打开页面
+- 启动信息写入用户目录的 `md-browser.log`（`~/md-browser.log`）
+- 启动失败（如端口被占）会弹出 Windows 消息框提示
+- 需停止时：通过任务管理器结束 `md-browser.exe` 进程，或命令行 `taskkill /IM md-browser.exe /F`
+- 命令行参数仍可用：`md-browser.exe --port 8484 [目录]`
 
 ## 项目结构
 
@@ -142,7 +157,8 @@ build.bat
 003-md-viewer/
 ├── server.py          # Python 后端（多线程 HTTP 服务 + API）
 ├── index.html         # 前端 SPA（随 exe 打包）
-├── build.bat          # Windows 一键构建脚本
+├── build.py           # 打包脚本（调用 PyInstaller Python API）
+├── build.bat          # Windows 薄封装（调用 build.py）
 ├── requirements.txt   # 依赖说明（无第三方运行时依赖）
 ├── .gitignore
 └── README.md          # 本文件
@@ -159,6 +175,13 @@ build.bat
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
 
 ## 更新日志
+
+### v1.10 — 无终端 exe & Python 打包脚本
+- **无终端启动**: exe 默认 `--windowed` 打包，双击不弹黑框，浏览器自动打开
+- **Python 打包脚本**: 新增 `build.py`，通过 PyInstaller Python API 调用打包（替代直接 `pyinstaller` 命令行），`build.bat` 改为薄封装
+- **调试模式**: `python build.py --console` 可构建带终端的 exe，便于排查
+- **日志与弹窗**: 无终端模式下启动信息写入 `~/md-browser.log`，启动失败弹 Windows 消息框
+- **日志机制重构**: `server.py` 引入 `log()`/`alert()`，stdout 不可用时自动转日志文件，HTTP 请求日志静默
 
 ### v1.9.1 — 公式渲染健壮性修复
 - **KaTeX 加载时序修复**: CDN 慢加载时 `katex` 可能未就绪导致部分公式渲染失败、显示原始 LaTeX。改为等待就绪后重试（最多 20s）
