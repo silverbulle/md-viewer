@@ -1309,6 +1309,41 @@
       return `<a href="${href}" title="${title}">${text}</a>`;
     };
 
+    // Custom renderer for images: resolve local relative paths to /api/asset,
+    // and support Pandoc-style {width=.. height=..} attribute syntax that
+    // marked doesn't parse natively (it would leak as literal text otherwise).
+    renderer.image = function(token) {
+      const href = (typeof token === 'object' && token !== null) ? (token.href || '') : '';
+      let title = (typeof token === 'object' && token !== null) ? (token.title || '') : '';
+      let alt = (typeof token === 'object' && token !== null) ? (token.text || '') : '';
+
+      if (typeof href !== 'string') {
+        return `<img alt="${alt}" title="${title}">`;
+      }
+
+      // External / data URLs — leave as-is
+      if (href.startsWith('http') || href.startsWith('data:') || href.startsWith('//')) {
+        return `<img src="${href}" alt="${alt}" title="${title}">`;
+      }
+
+      // marked sometimes stuffs trailing {width=...} into the title; also
+      // accept it inline in alt text. Extract and apply as inline style.
+      const attrMatch = (title + ' ' + alt).match(/\{[^}]*width\s*=\s*"?([^"}]+)"?[^}]*\}/i);
+      let styleAttr = '';
+      if (attrMatch) {
+        const w = attrMatch[1];
+        styleAttr = ` style="width:${w.includes('%') || w.includes('px') ? w : w + 'px'};max-width:100%;"`;
+        // strip the {...} from title/alt so it doesn't render as tooltip/text
+        title = title.replace(/\{[^}]*\}/g, '').trim();
+        alt = alt.replace(/\{[^}]*\}/g, '').trim();
+      }
+
+      // Resolve relative path against the currently open file's directory
+      const resolved = resolveAssetPath(href);
+      const enc = encodeURIComponent(resolved);
+      return `<img src="/api/asset?path=${enc}" alt="${escapeAttr(alt)}" title="${escapeAttr(title)}"${styleAttr}>`;
+    };
+
     marked.use({ renderer });
 
     // ===== Configure Mermaid.js =====
@@ -2125,6 +2160,32 @@
       targetPath = targetPath.replace(/\/+/g, '/');
 
       loadFile(targetPath, fragment);
+    }
+
+    // Resolve an image's relative path against the currently open file's
+    // directory, producing a base-directory-relative path for /api/asset.
+    // Mirrors navigateToLink's resolution but without fragment handling.
+    function resolveAssetPath(href) {
+      if (!currentFile) return href.replace(/^\.?\//, '');
+      const currentDir = currentFile.includes('/')
+        ? currentFile.substring(0, currentFile.lastIndexOf('/'))
+        : '';
+
+      let targetPath;
+      if (href.startsWith('../')) {
+        const parts = currentDir.split('/').filter(Boolean);
+        const upCount = (href.match(/\.\.\//g) || []).length;
+        for (let i = 0; i < upCount && parts.length > 0; i++) parts.pop();
+        const remaining = href.replace(/(\.\.\/)+/, '');
+        targetPath = [...parts, remaining].join('/');
+      } else if (href.startsWith('./')) {
+        targetPath = currentDir ? `${currentDir}/${href.substring(2)}` : href.substring(2);
+      } else if (href.startsWith('/')) {
+        targetPath = href.substring(1);
+      } else {
+        targetPath = currentDir ? `${currentDir}/${href}` : href;
+      }
+      return targetPath.replace(/\/+/g, '/');
     }
 
     // Scroll to an anchor within the current document

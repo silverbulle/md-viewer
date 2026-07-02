@@ -44,7 +44,8 @@ python server.py ../001-network-protocols
 
 | 功能 | 说明 |
 |------|------|
-| **Markdown 渲染** | GFM 表格、代码语法高亮、Mermaid 图表、数学公式、ASCII 图表 |
+| **Markdown 渲染** | GFM 表格、代码语法高亮、Mermaid 图表、数学公式、本地图片、ASCII 图表 |
+| **本地图片** | `![alt](./assets/x.png)` 相对路径自动解析到当前文件目录，支持 `{width="80%"}` 属性语法 |
 | **数学公式** | 行内 `$...$` 与块级 `$$...$$`，基于 KaTeX 渲染 LaTeX 语法（`\frac`、`\sum`、`\text` 等） |
 | **Mermaid 图表** | 支持流程图、时序图、脑图、甘特图、类图、状态图等所有 Mermaid 图表类型，渲染失败时显示错误信息和源码 |
 | **交叉引用跳转** | 点击文档内 `.md` 链接直接跳转到目标文件 |
@@ -179,8 +180,15 @@ build.bat
 | `/api/switch?dir=...` | GET | 切换到指定目录 |
 | `/api/search?q=...` | GET | 全文搜索，返回匹配结果 |
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
+| `/api/asset?path=...` | GET | 服务 base_directory 内的图片/静态资源（供 md 内本地图片引用） |
 
 ## 更新日志
+
+### v1.14 — 本地图片渲染
+- **本地图片支持**: `![alt](./assets/x.png)` 等相对路径图片自动解析到当前 md 文件所在目录，正确显示（之前因后端从 CWD 找文件而 404）
+- **新增 `/api/asset` 端点**: 在 base_directory 沙箱内服务图片/静态资源，带路径穿越防护和白名单类型校验
+- **`{width=..}` 属性语法**: 支持 Pandoc 风格的图片属性（如 `{width="80%"}`），自动转为 inline style，不再残留为文本
+- **路径解析**: 复用 `navigateToLink` 的相对路径解析逻辑（`./`、`../`、`/`、裸路径均支持）
 
 ### v1.13 — UI 过渡平滑化 & 目录区合并
 - **Files/Outline 淡入淡出**: tab 切换内容区先淡出再淡入（~120ms），不再瞬切

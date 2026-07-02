@@ -249,6 +249,8 @@ class MDHandler(SimpleHTTPRequestHandler):
             self.handle_search(query)
         elif path == '/api/pick-folder':
             self.handle_pick_folder()
+        elif path == '/api/asset':
+            self.handle_asset(query)
         elif path == '/' or path == '/index.html':
             self.serve_frontend()
         else:
@@ -353,6 +355,70 @@ class MDHandler(SimpleHTTPRequestHandler):
             })
         except Exception as e:
             self.send_error(500, f"Error reading file: {str(e)}")
+
+    def handle_asset(self, query):
+        """Serve an image/static asset from within base_directory.
+
+        Relative image paths in markdown (e.g. ./assets/x.png) are resolved
+        against base_directory by the frontend and requested here as
+        ?path=cloud-datacenter/assets/x.png. This avoids relying on the
+        server's CWD (which SimpleHTTPRequestHandler uses) and keeps all
+        file access sandboxed under base_directory.
+        """
+        if not self.base_directory:
+            self.send_error(400, "No directory selected")
+            return
+
+        asset_path = query.get('path', [None])[0]
+        if not asset_path:
+            self.send_error(400, "Missing 'path' parameter")
+            return
+
+        base_path = Path(self.base_directory).resolve()
+        target_path = (base_path / unquote(asset_path)).resolve()
+
+        # Security: must stay within base_directory
+        if not str(target_path).startswith(str(base_path)):
+            self.send_error(403, "Access denied: path outside allowed directory")
+            return
+
+        if not target_path.exists() or not target_path.is_file():
+            self.send_error(404, f"Asset not found: {asset_path}")
+            return
+
+        # Allow only common static asset types (block arbitrary file reads)
+        allowed_suffixes = {
+            '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico',
+            '.pdf', '.css', '.js', '.json', '.txt',
+        }
+        if target_path.suffix.lower() not in allowed_suffixes:
+            self.send_error(403, "Unsupported asset type")
+            return
+
+        content_type = self.guess_content_type(target_path)
+        try:
+            data = target_path.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', len(data))
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_error(500, f"Error reading asset: {str(e)}")
+
+    @staticmethod
+    def guess_content_type(path):
+        """Map a file extension to a MIME type (minimal set for assets)."""
+        ext = path.suffix.lower()
+        return {
+            '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+            '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+            '.pdf': 'application/pdf', '.css': 'text/css',
+            '.js': 'application/javascript', '.json': 'application/json',
+            '.txt': 'text/plain; charset=utf-8',
+        }.get(ext, 'application/octet-stream')
 
     def serve_frontend(self):
         """Serve the index.html file."""
