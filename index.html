@@ -990,6 +990,67 @@
       padding: 0;
     }
 
+    /* Image Zoom Overlay (reuses the mermaid-overlay visual style) */
+    .img-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+
+    .img-overlay-toolbar {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      gap: 6px;
+      z-index: 10001;
+    }
+
+    .img-overlay-viewport {
+      max-width: 92vw;
+      max-height: 88vh;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      position: relative;
+    }
+
+    .img-overlay-viewport.dragging {
+      cursor: grabbing;
+    }
+
+    .img-overlay-viewport img {
+      max-width: none;
+      max-height: none;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+      border-radius: 4px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      pointer-events: none;
+    }
+
+    .img-overlay-zoom-label {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 10001;
+      pointer-events: none;
+    }
+
     #content blockquote {
       border-left: 4px solid var(--blockquote-border);
       background: var(--blockquote-bg);
@@ -1044,6 +1105,11 @@
     #content img {
       max-width: 100%;
       border-radius: 6px;
+      cursor: zoom-in;
+    }
+
+    #content a img {
+      cursor: pointer;
     }
 
     /* ===== Loading ===== */
@@ -1675,6 +1741,188 @@
       document.addEventListener('keydown', onKeyDown);
     }
 
+    // ===== Image Post-Processing =====
+    // Pandoc writes images as ![alt](src){width="85%"} — the trailing {...}
+    // sits OUTSIDE the image syntax, so marked renders it as a literal text
+    // node after the <img>. We absorb it into inline style and attach a
+    // click-to-zoom handler (mirroring the Mermaid overlay experience).
+    function postProcessImages(root) {
+      // 1. Absorb trailing {width=..}/{height=..} text nodes that follow an img.
+      const imgs = Array.from(root.querySelectorAll('img'));
+      for (const img of imgs) {
+        let node = img.nextSibling;
+        // skip empty whitespace-only text nodes, then check the next real node
+        while (node && node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '') {
+          node = node.nextSibling;
+        }
+        if (node && node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent;
+          const m = text.match(/\{([^}]*)\}/);
+          if (m) {
+            const attrs = m[1];
+            const styleParts = [];
+            const wm = attrs.match(/width\s*=\s*"?([^"}\s]+)"?/i);
+            const hm = attrs.match(/height\s*=\s*"?([^"}\s]+)"?/i);
+            if (wm) {
+              const w = wm[1];
+              styleParts.push(`width:${w.includes('%') || w.includes('px') ? w : w + 'px'}`);
+            }
+            if (hm) {
+              const h = hm[1];
+              styleParts.push(`height:${h.includes('%') || h.includes('px') ? h : h + 'px'}`);
+            }
+            if (styleParts.length) {
+              img.style.cssText += `;${styleParts.join(';')};max-width:100%;`;
+            }
+            // remove the entire {...} occurrence from the text node; if the
+            // node is now only whitespace, drop it so no stray space remains.
+            const leftover = text.replace(/\{[^}]*\}/g, '').replace(/\s+$/, '');
+            if (leftover === '') {
+              node.remove();
+            } else {
+              node.textContent = leftover;
+            }
+          }
+        }
+      }
+
+      // 2. Attach click-to-zoom (skip images already inside clickable links).
+      for (const img of imgs) {
+        if (img.closest('a')) continue;
+        img.addEventListener('click', () => openImageOverlay(img));
+      }
+    }
+
+    // ===== Image Zoom Overlay =====
+    // Unlike the Mermaid overlay (which scales an SVG from a fixed 1:1), an
+    // image's natural pixel size varies wildly, so we fit-to-screen on open
+    // and use width-based scaling + drag-to-pan.
+    function openImageOverlay(srcImg) {
+      const overlay = document.createElement('div');
+      overlay.className = 'img-overlay';
+
+      const ZOOM_STEP = 0.2;
+      const ZOOM_MIN = 0.1;
+      const ZOOM_MAX = 8;
+      let zoom = 1;
+      let naturalW = srcImg.naturalWidth || 0;
+      let naturalH = srcImg.naturalHeight || 0;
+
+      overlay.innerHTML = `
+        <div class="img-overlay-toolbar">
+          <button class="zoom-in-btn" title="放大">＋</button>
+          <button class="zoom-out-btn" title="缩小">－</button>
+          <button class="zoom-reset-btn" title="1:1 实际尺寸">1:1</button>
+          <button class="zoom-fit-btn" title="适应窗口">⊡</button>
+          <button class="close-btn" title="关闭 (Esc)">✕</button>
+        </div>
+        <div class="img-overlay-viewport">
+          <img src="${srcImg.src}" alt="${srcImg.alt || ''}">
+        </div>
+        <div class="img-overlay-zoom-label">100%</div>
+      `;
+
+      document.body.appendChild(overlay);
+      document.body.style.overflow = 'hidden';
+
+      const viewport = overlay.querySelector('.img-overlay-viewport');
+      const img = overlay.querySelector('img');
+      const zoomLabel = overlay.querySelector('.img-overlay-zoom-label');
+
+      function applySize() {
+        img.style.width = (naturalW * zoom) + 'px';
+        img.style.height = 'auto';
+        zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      }
+
+      // Fit to viewport on open (cap at 1:1 so small images don't upscale).
+      function fitToViewport() {
+        if (!naturalW || !naturalH) { zoom = 1; applySize(); return; }
+        const vpW = viewport.clientWidth - 40;
+        const vpH = viewport.clientHeight - 40;
+        zoom = Math.min(vpW / naturalW, vpH / naturalH, 1);
+        zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+        applySize();
+        viewport.scrollTo(0, 0);
+      }
+
+      function updateZoom(delta) {
+        const prev = zoom;
+        zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
+        // keep the viewport center fixed while zooming
+        const cx = viewport.scrollLeft + viewport.clientWidth / 2;
+        const cy = viewport.scrollTop + viewport.clientHeight / 2;
+        const ratio = zoom / prev;
+        applySize();
+        viewport.scrollLeft = cx * ratio - viewport.clientWidth / 2;
+        viewport.scrollTop = cy * ratio - viewport.clientHeight / 2;
+      }
+
+      // Wait for the image to load so naturalWidth/Height are known.
+      if (img.complete && naturalW) {
+        fitToViewport();
+      } else {
+        img.addEventListener('load', () => {
+          naturalW = img.naturalWidth;
+          naturalH = img.naturalHeight;
+          fitToViewport();
+        }, { once: true });
+        // Fall back to 1:1 if load never fires.
+        setTimeout(() => { if (!naturalW) { naturalW = img.width; naturalH = img.height; fitToViewport(); } }, 500);
+      }
+
+      overlay.querySelector('.zoom-in-btn').addEventListener('click', e => { e.stopPropagation(); updateZoom(ZOOM_STEP); });
+      overlay.querySelector('.zoom-out-btn').addEventListener('click', e => { e.stopPropagation(); updateZoom(-ZOOM_STEP); });
+      overlay.querySelector('.zoom-reset-btn').addEventListener('click', e => { e.stopPropagation(); zoom = 1; applySize(); });
+      overlay.querySelector('.zoom-fit-btn').addEventListener('click', e => { e.stopPropagation(); fitToViewport(); });
+
+      function closeOverlay() {
+        overlay.remove();
+        document.body.style.overflow = '';
+      }
+      overlay.querySelector('.close-btn').addEventListener('click', e => { e.stopPropagation(); closeOverlay(); });
+
+      // Close on backdrop click (but not on the image itself)
+      overlay.addEventListener('click', e => {
+        if (e.target === overlay) closeOverlay();
+      });
+
+      // Mouse wheel zoom (Ctrl/Cmd) or plain wheel = zoom too
+      viewport.addEventListener('wheel', e => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+        updateZoom(delta);
+      }, { passive: false });
+
+      // Drag-to-pan
+      let dragging = false, startX = 0, startY = 0, scrollX = 0, scrollY = 0;
+      viewport.addEventListener('mousedown', e => {
+        dragging = true;
+        startX = e.pageX;
+        startY = e.pageY;
+        scrollX = viewport.scrollLeft;
+        scrollY = viewport.scrollTop;
+        viewport.classList.add('dragging');
+      });
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        viewport.scrollLeft = scrollX - (e.pageX - startX);
+        viewport.scrollTop = scrollY - (e.pageY - startY);
+      });
+      document.addEventListener('mouseup', () => {
+        if (dragging) { dragging = false; viewport.classList.remove('dragging'); }
+      });
+
+      // Keyboard: Esc to close, +/-/0 to zoom
+      function onKeyDown(e) {
+        if (e.key === 'Escape') { closeOverlay(); document.removeEventListener('keydown', onKeyDown); }
+        else if (e.key === '+' || e.key === '=') { updateZoom(ZOOM_STEP); }
+        else if (e.key === '-') { updateZoom(-ZOOM_STEP); }
+        else if (e.key === '0') { zoom = 1; applySize(); }
+      }
+      document.addEventListener('keydown', onKeyDown);
+    }
+
     // ===== API Functions =====
     async function fetchTree() {
       const res = await fetch('/api/tree');
@@ -2077,6 +2325,11 @@
         const mathSrc = extractMath(data.content);
         content.innerHTML = marked.parse(mathSrc);
         content.style.display = 'block';
+
+        // Absorb Pandoc-style {width=.. height=..} attribute syntax that
+        // marked leaves as literal text after images, applying it as inline
+        // style and wiring up click-to-zoom.
+        postProcessImages(content);
 
         // Render math formulas (KaTeX) — must run after innerHTML is set
         renderMath();
