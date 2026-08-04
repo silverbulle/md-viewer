@@ -2543,9 +2543,9 @@
       if (!isEditing) return true;
       const editor = document.getElementById('editor');
       if (editor.value !== currentFileContent) {
-        return confirm('有未保存的修改，是否放弃？');
+        if (!confirm('有未保存的修改，是否放弃？')) return false;
       }
-      // No unsaved changes — silently exit edit mode
+      // No unsaved changes, or user confirmed discard — exit edit mode
       exitEditMode();
       return true;
     }
