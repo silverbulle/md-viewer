@@ -51,6 +51,7 @@ python server.py ../001-network-protocols
 | **交叉引用跳转** | 点击文档内 `.md` 链接直接跳转到目标文件 |
 | **锚点跳转** | 支持 `file.md#heading` 跨文件锚点和 `#heading` 同页面锚点 |
 | **文档大纲 (Outline)** | 侧边栏 Files/Outline 切换，显示 h1~h4 标题结构，点击跳转（从 MD 源码提取，不依赖渲染 DOM） |
+| **轻量级编辑** | 右上角 ✏️ 按钮进入编辑模式，直接修改 Markdown 源码并保存；`Ctrl+E` 切换编辑、`Ctrl+S` 保存；切换文件时自动拦截未保存修改 |
 
 ### 搜索
 
@@ -71,6 +72,8 @@ python server.py ../001-network-protocols
 | **前进** | `Ctrl + →` | 前进到下一个文档 |
 | **聚焦搜索** | `Ctrl + K` | 快速聚焦搜索框 |
 | **关闭搜索** | `Esc` | 关闭搜索结果下拉 |
+| **编辑/保存** | `Ctrl + E` | 进入/保存编辑模式 |
+| **保存** | `Ctrl + S` | 编辑模式下保存文件 |
 
 ## 常见问题
 
@@ -181,8 +184,16 @@ build.bat
 | `/api/search?q=...` | GET | 全文搜索，返回匹配结果 |
 | `/api/pick-folder` | GET | 打开原生文件夹选择对话框 |
 | `/api/asset?path=...` | GET | 服务 base_directory 内的图片/静态资源（供 md 内本地图片引用） |
+| `/api/save` | POST | 保存 Markdown 文件内容（JSON body: `{path, content}`） |
 
 ## 更新日志
+
+### v1.16 — 轻量级编辑功能
+- **在线编辑**: 右上角 ✏️ 按钮一键进入编辑模式，textarea 显示原始 Markdown 源码，保存后自动重新渲染
+- **快捷键**: `Ctrl+E` 切换编辑/保存，`Ctrl+S` 保存（编辑模式下）
+- **未保存保护**: 编辑中切换文件或关闭页面时弹确认框，避免误丢修改
+- **安全沙箱**: 保存端点复用 `base_directory` 路径校验，防穿越攻击，仅允许 `.md` 文件
+- **新增 `POST /api/save` 端点**: 接收 JSON `{path, content}`，写入文件并返回 `{success, size}`
 
 ### v1.15 — 图片点击放大 & Pandoc 属性修复
 - **图片点击放大**: 点击文档内任意图片弹出全屏查看浮层（与 Mermaid 图表放大体验一致），支持滚轮/按钮缩放、拖拽平移、`1:1` 实际尺寸、适应窗口、键盘 `+/-/0/Esc`
