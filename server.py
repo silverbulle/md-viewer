@@ -256,6 +256,83 @@ class MDHandler(SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
+    def do_POST(self):
+        """Handle POST requests."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == '/api/save':
+            self.handle_save()
+        else:
+            self.send_error(405, "Method Not Allowed")
+
+    def handle_save(self):
+        """Save content to a markdown file within base_directory."""
+        if not self.base_directory:
+            self.send_json_error(400, "No directory selected")
+            return
+
+        # Read and parse request body
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (ValueError, TypeError):
+            self.send_json_error(400, "Invalid Content-Length")
+            return
+
+        if content_length > 10 * 1024 * 1024:
+            self.send_json_error(413, "Request body too large (max 10MB)")
+            return
+
+        if content_length == 0:
+            self.send_json_error(400, "Empty request body")
+            return
+
+        try:
+            raw_body = self.rfile.read(content_length)
+            body = json.loads(raw_body.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            self.send_json_error(400, f"Invalid JSON: {e}")
+            return
+
+        file_path = body.get('path')
+        content = body.get('content')
+
+        if not file_path:
+            self.send_json_error(400, "Missing 'path' field")
+            return
+        if content is None:
+            self.send_json_error(400, "Missing 'content' field")
+            return
+
+        # Resolve and validate path (same sandbox logic as handle_file)
+        base_path = Path(self.base_directory).resolve()
+        target_path = (base_path / unquote(file_path)).resolve()
+
+        # Security: ensure path is within base directory
+        if not str(target_path).startswith(str(base_path)):
+            self.send_json_error(403, "Access denied: path outside allowed directory")
+            return
+
+        if not target_path.exists():
+            self.send_json_error(404, f"File not found: {file_path}")
+            return
+
+        if not target_path.is_file() or target_path.suffix.lower() != '.md':
+            self.send_json_error(400, "Not a markdown file")
+            return
+
+        # Write content (newline='' prevents Windows \n -> \r\n translation)
+        try:
+            with open(target_path, 'w', encoding='utf-8', newline='') as f:
+                f.write(content)
+            self.send_json({
+                "success": True,
+                "path": file_path,
+                "size": target_path.stat().st_size
+            })
+        except Exception as e:
+            self.send_json_error(500, f"Error saving file: {e}")
+
     def handle_tree(self, query):
         """Return directory tree structure."""
         if not self.base_directory:
