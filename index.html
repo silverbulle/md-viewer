@@ -1991,6 +1991,7 @@
 
     // ===== Directory Switching =====
     async function switchToDir(dirPath) {
+      if (!confirmDiscardIfEditing()) return;
       const input = document.getElementById('dir-input');
       const errorEl = document.getElementById('dir-error');
 
@@ -2324,6 +2325,7 @@
 
     // ===== File Loading =====
     async function loadFile(path, fragment, searchTerm) {
+      if (!confirmDiscardIfEditing()) return;
       // Update active state in sidebar
       document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
       const activeEl = document.querySelector(`.tree-file[data-path="${path}"]`);
@@ -2537,6 +2539,17 @@
       exitEditMode();
     }
 
+    function confirmDiscardIfEditing() {
+      if (!isEditing) return true;
+      const editor = document.getElementById('editor');
+      if (editor.value !== currentFileContent) {
+        return confirm('有未保存的修改，是否放弃？');
+      }
+      // No unsaved changes — silently exit edit mode
+      exitEditMode();
+      return true;
+    }
+
     function showSaveStatus() {
       const status = document.getElementById('save-status');
       status.textContent = '✓ Saved';
@@ -2545,6 +2558,16 @@
         status.classList.remove('visible');
       }, 2000);
     }
+
+    window.addEventListener('beforeunload', (e) => {
+      if (isEditing) {
+        const editor = document.getElementById('editor');
+        if (editor.value !== currentFileContent) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      }
+    });
 
     // ===== Link Navigation =====
     function navigateToLink(href, fragment) {
