@@ -731,6 +731,44 @@
       line-height: 1.8;
     }
 
+    /* ===== Editor (edit mode) ===== */
+    #editor {
+      max-width: 860px;
+      margin: 0 auto;
+      width: 100%;
+      min-height: calc(100vh - 44px);
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-family: "Cascadia Code", "Fira Code", "Consolas", "SF Mono", monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--content-text);
+      background: #fff;
+      resize: vertical;
+      outline: none;
+      box-sizing: border-box;
+      tab-size: 2;
+    }
+
+    #editor:focus {
+      border-color: #4a90d9;
+      box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.15);
+    }
+
+    #save-status {
+      color: #2d8a4e;
+      font-size: 12px;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s;
+      margin-right: 8px;
+    }
+
+    #save-status.visible {
+      opacity: 1;
+    }
+
     /* ===== Welcome Screen ===== */
     #welcome {
       display: flex;
@@ -1231,6 +1269,9 @@
         </div>
         <button id="search-btn" onclick="triggerSearch()">Search</button>
       </div>
+      <button class="nav-btn" id="edit-btn" onclick="toggleEdit()" disabled title="Edit (Ctrl+E)" style="margin-left: 8px;">✏️</button>
+      <button class="nav-btn" id="cancel-edit-btn" onclick="cancelEdit()" title="Cancel edit" style="display: none;">✕</button>
+      <span id="save-status"></span>
     </div>
     <div id="content-wrapper">
       <div id="welcome">
@@ -1240,6 +1281,7 @@
         <p style="margin-top: 8px; font-size: 12px; color: #bbb;">例如: <code>D:\claude\001-network-protocols</code></p>
       </div>
       <div id="content" style="display:none;"></div>
+      <textarea id="editor" style="display:none;" spellcheck="false"></textarea>
     </div>
   </div>
 
