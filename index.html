@@ -1288,6 +1288,8 @@
   <script>
     // ===== State =====
     let currentFile = null;
+    let currentFileContent = null;
+    let isEditing = false;
     let treeData = null;
 
     // Navigation history
@@ -2352,6 +2354,8 @@
       try {
         const data = await fetchFile(path);
         currentFile = path;
+        currentFileContent = data.content;
+        document.getElementById('edit-btn').disabled = false;
 
         // Update breadcrumb
         const parts = path.split('/');
@@ -2426,6 +2430,120 @@
         const loading = document.getElementById('loading');
         if (loading) loading.remove();
       }
+    }
+
+    // ===== Edit Mode =====
+    function toggleEdit() {
+      if (!currentFile) return;
+      if (!isEditing) {
+        enterEditMode();
+      } else {
+        saveEdit();
+      }
+    }
+
+    function enterEditMode() {
+      const content = document.getElementById('content');
+      const welcome = document.getElementById('welcome');
+      const editor = document.getElementById('editor');
+      const editBtn = document.getElementById('edit-btn');
+      const cancelBtn = document.getElementById('cancel-edit-btn');
+
+      editor.value = currentFileContent || '';
+      editor.style.display = 'block';
+      content.style.display = 'none';
+      welcome.style.display = 'none';
+
+      editBtn.textContent = '💾';
+      editBtn.title = 'Save (Ctrl+S)';
+      cancelBtn.style.display = 'flex';
+
+      isEditing = true;
+      editor.focus();
+    }
+
+    function exitEditMode() {
+      const content = document.getElementById('content');
+      const welcome = document.getElementById('welcome');
+      const editor = document.getElementById('editor');
+      const editBtn = document.getElementById('edit-btn');
+      const cancelBtn = document.getElementById('cancel-edit-btn');
+
+      editor.style.display = 'none';
+      editor.value = '';
+      // Restore content or welcome view
+      if (currentFile) {
+        content.style.display = 'block';
+      } else {
+        welcome.style.display = 'flex';
+      }
+
+      editBtn.textContent = '✏️';
+      editBtn.title = 'Edit (Ctrl+E)';
+      cancelBtn.style.display = 'none';
+
+      isEditing = false;
+    }
+
+    async function saveEdit() {
+      if (!currentFile) return;
+
+      const editor = document.getElementById('editor');
+      const editBtn = document.getElementById('edit-btn');
+      const newContent = editor.value;
+
+      editBtn.disabled = true;
+      editBtn.textContent = '⏳';
+
+      try {
+        const res = await fetch('/api/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: currentFile, content: newContent })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || res.statusText);
+        }
+
+        currentFileContent = newContent;
+        exitEditMode();
+
+        // Show "Saved" flash
+        showSaveStatus();
+
+        // Reload file to re-render (reuses full render pipeline)
+        await loadFile(currentFile);
+      } catch (err) {
+        alert('保存失败: ' + err.message);
+      } finally {
+        editBtn.disabled = false;
+        // If still editing (save failed), restore 💾 icon; otherwise ✏️
+        if (isEditing) {
+          editBtn.textContent = '💾';
+        } else {
+          editBtn.textContent = '✏️';
+        }
+      }
+    }
+
+    function cancelEdit() {
+      if (!isEditing) return;
+      const editor = document.getElementById('editor');
+      if (editor.value !== currentFileContent) {
+        if (!confirm('放弃未保存的修改？')) return;
+      }
+      exitEditMode();
+    }
+
+    function showSaveStatus() {
+      const status = document.getElementById('save-status');
+      status.textContent = '✓ Saved';
+      status.classList.add('visible');
+      setTimeout(() => {
+        status.classList.remove('visible');
+      }, 2000);
     }
 
     // ===== Link Navigation =====
@@ -2788,6 +2906,8 @@
 
         // Reset content area
         currentFile = null;
+        currentFileContent = null;
+        document.getElementById('edit-btn').disabled = true;
         document.getElementById('content').style.display = 'none';
         document.getElementById('welcome').style.display = 'flex';
         document.getElementById('breadcrumb').innerHTML = '<span>Select a file from the sidebar</span>';
