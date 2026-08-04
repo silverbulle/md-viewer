@@ -2681,6 +2681,16 @@
         e.preventDefault();
         navigateForward();
       }
+      // Ctrl+E: toggle edit mode
+      if (e.ctrlKey && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        toggleEdit();
+      }
+      // Ctrl+S: save (only in edit mode)
+      if (e.ctrlKey && (e.key === 's' || e.key === 'S') && isEditing) {
+        e.preventDefault();
+        saveEdit();
+      }
     });
 
     // ===== TOC scroll-spy: highlight current heading in Outline =====
