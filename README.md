@@ -52,6 +52,7 @@ python server.py ../001-network-protocols
 | **锚点跳转** | 支持 `file.md#heading` 跨文件锚点和 `#heading` 同页面锚点 |
 | **文档大纲 (Outline)** | 侧边栏 Files/Outline 切换，显示 h1~h4 标题结构，点击跳转（从 MD 源码提取，不依赖渲染 DOM） |
 | **轻量级编辑** | 右上角 ✏️ 按钮进入编辑模式，直接修改 Markdown 源码并保存；`Ctrl+E` 切换编辑、`Ctrl+S` 保存；切换文件时自动拦截未保存修改 |
+| **系统托盘图标** | 运行时在系统托盘显示图标，双击重新打开浏览器，右键 → Exit 退出进程，无需任务管理器 |
 
 ### 搜索
 
@@ -187,6 +188,12 @@ build.bat
 | `/api/save` | POST | 保存 Markdown 文件内容（JSON body: `{path, content}`） |
 
 ## 更新日志
+
+### v1.17 — 系统托盘图标
+- **托盘图标**: 运行时在系统托盘显示图标，无需任务管理器即可退出进程
+- **双击打开**: 双击托盘图标重新打开浏览器窗口
+- **右键退出**: 右键托盘图标 → "Exit" 即可关闭程序
+- **零依赖实现**: 使用 ctypes 调用 Windows Shell_NotifyIconW API，不引入任何第三方库
 
 ### v1.16 — 轻量级编辑功能
 - **在线编辑**: 右上角 ✏️ 按钮一键进入编辑模式，textarea 显示原始 Markdown 源码，保存后自动重新渲染

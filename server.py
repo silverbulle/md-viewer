@@ -587,6 +587,268 @@ def remove_lock():
         pass
 
 
+def run_tray_icon(server, url, chosen_port):
+    """Run a system tray icon with an Exit menu item.
+
+    The HTTP server runs in a daemon thread; this function runs a Windows
+    message loop in the main thread. Blocks until the user selects Exit
+    from the tray icon's right-click menu, then shuts down the server.
+    Falls back to blocking serve_forever() on non-Windows or API failure.
+    """
+    if sys.platform != 'win32':
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            log("Shutting down...")
+        finally:
+            server.shutdown()
+        return
+
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        shell32 = ctypes.windll.shell32
+
+        # --- Constants ---
+        WM_APP = 0x8000
+        WM_TRAYICON = WM_APP + 1
+        WM_COMMAND = 0x0111
+        WM_DESTROY = 0x0002
+        WM_LBUTTONDBLCLK = 0x0203
+        WM_RBUTTONUP = 0x0205
+
+        NIM_ADD = 0
+        NIM_DELETE = 2
+        NIF_MESSAGE = 0x1
+        NIF_ICON = 0x2
+        NIF_TIP = 0x4
+
+        IDI_APPLICATION = 32512
+        MF_STRING = 0x0
+        TPM_RIGHTALIGN = 0x8
+        TPM_BOTTOMALIGN = 0x20
+
+        ID_EXIT = 1001
+        TRAY_UID = 1
+
+        # --- Structures ---
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+        WNDPROC = ctypes.WINFUNCTYPE(
+            ctypes.c_long, ctypes.c_void_p, ctypes.c_uint,
+            ctypes.c_size_t, ctypes.c_long
+        )
+
+        class WNDCLASSEXW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.c_uint),
+                ("style", ctypes.c_uint),
+                ("lpfnWndProc", WNDPROC),
+                ("cbClsExtra", ctypes.c_int),
+                ("cbWndExtra", ctypes.c_int),
+                ("hInstance", ctypes.c_void_p),
+                ("hIcon", ctypes.c_void_p),
+                ("hCursor", ctypes.c_void_p),
+                ("hbrBackground", ctypes.c_void_p),
+                ("lpszMenuName", ctypes.c_wchar_p),
+                ("lpszClassName", ctypes.c_wchar_p),
+                ("hIconSm", ctypes.c_void_p),
+            ]
+
+        class NOTIFYICONDATAW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.c_uint),
+                ("hWnd", ctypes.c_void_p),
+                ("uID", ctypes.c_uint),
+                ("uFlags", ctypes.c_uint),
+                ("uCallbackMessage", ctypes.c_uint),
+                ("hIcon", ctypes.c_void_p),
+                ("szTip", ctypes.c_wchar * 128),
+                ("dwState", ctypes.c_uint),
+                ("dwStateMask", ctypes.c_uint),
+                ("szInfo", ctypes.c_wchar * 256),
+                ("uTimeout", ctypes.c_uint),
+                ("szInfoTitle", ctypes.c_wchar * 64),
+                ("dwInfoFlags", ctypes.c_uint),
+            ]
+
+        class MSG(ctypes.Structure):
+            _fields_ = [
+                ("hWnd", ctypes.c_void_p),
+                ("message", ctypes.c_uint),
+                ("wParam", ctypes.c_size_t),
+                ("lParam", ctypes.c_long),
+                ("time", ctypes.c_uint),
+                ("pt", POINT),
+            ]
+
+        # --- Argtypes for critical functions ---
+        user32.RegisterClassExW.argtypes = [ctypes.c_void_p]
+        user32.RegisterClassExW.restype = ctypes.c_ushort
+
+        user32.CreateWindowExW.argtypes = [
+            ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        ]
+        user32.CreateWindowExW.restype = ctypes.c_void_p
+
+        user32.DefWindowProcW.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_long,
+        ]
+        user32.DefWindowProcW.restype = ctypes.c_long
+
+        shell32.Shell_NotifyIconW.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+        shell32.Shell_NotifyIconW.restype = ctypes.c_int
+
+        user32.LoadIconW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        user32.LoadIconW.restype = ctypes.c_void_p
+
+        user32.GetMessageW.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint,
+        ]
+        user32.GetMessageW.restype = ctypes.c_int
+
+        user32.TranslateMessage.argtypes = [ctypes.c_void_p]
+        user32.TranslateMessage.restype = ctypes.c_int
+
+        user32.DispatchMessageW.argtypes = [ctypes.c_void_p]
+        user32.DispatchMessageW.restype = ctypes.c_long
+
+        user32.CreatePopupMenu.restype = ctypes.c_void_p
+        user32.AppendMenuW.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_wchar_p,
+        ]
+        user32.AppendMenuW.restype = ctypes.c_int
+
+        user32.TrackPopupMenu.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ]
+        user32.TrackPopupMenu.restype = ctypes.c_int
+
+        user32.DestroyMenu.argtypes = [ctypes.c_void_p]
+        user32.DestroyMenu.restype = ctypes.c_int
+
+        user32.GetCursorPos.argtypes = [ctypes.c_void_p]
+        user32.GetCursorPos.restype = ctypes.c_int
+
+        user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+        user32.SetForegroundWindow.restype = ctypes.c_int
+
+        user32.PostQuitMessage.argtypes = [ctypes.c_int]
+        user32.PostQuitMessage.restype = None
+
+        kernel32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
+        kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+
+        # --- Window proc ---
+        def window_proc(hwnd, msg_id, wparam, lparam):
+            if msg_id == WM_TRAYICON:
+                if lparam == WM_LBUTTONDBLCLK:
+                    webbrowser.open(url)
+                elif lparam == WM_RBUTTONUP:
+                    menu = user32.CreatePopupMenu()
+                    if menu:
+                        user32.AppendMenuW(menu, MF_STRING, ID_EXIT, "Exit")
+                        pt = POINT()
+                        user32.GetCursorPos(ctypes.byref(pt))
+                        # SetForegroundWindow is required for the menu to
+                        # dismiss when clicking outside (Windows quirk).
+                        user32.SetForegroundWindow(hwnd)
+                        user32.TrackPopupMenu(
+                            menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN,
+                            pt.x, pt.y, 0, hwnd, None,
+                        )
+                        user32.DestroyMenu(menu)
+                return 0
+
+            if msg_id == WM_COMMAND:
+                menu_id = wparam & 0xFFFF
+                if menu_id == ID_EXIT:
+                    log("Shutting down (tray exit)...")
+                    # Remove tray icon immediately for visual feedback
+                    nid = NOTIFYICONDATAW()
+                    nid.cbSize = ctypes.sizeof(nid)
+                    nid.hWnd = hwnd
+                    nid.uID = TRAY_UID
+                    shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+                    user32.PostQuitMessage(0)
+                return 0
+
+            if msg_id == WM_DESTROY:
+                user32.PostQuitMessage(0)
+                return 0
+
+            return user32.DefWindowProcW(hwnd, msg_id, wparam, lparam)
+
+        # --- Register window class ---
+        wndproc = WNDPROC(window_proc)  # keep reference to prevent GC
+        hinst = kernel32.GetModuleHandleW(None)
+
+        wc = WNDCLASSEXW()
+        wc.cbSize = ctypes.sizeof(wc)
+        wc.lpfnWndProc = wndproc
+        wc.hInstance = hinst
+        wc.lpszClassName = "MDBrowserTrayIcon"
+
+        if user32.RegisterClassExW(ctypes.byref(wc)) == 0:
+            raise RuntimeError("RegisterClassExW failed")
+
+        # --- Create hidden window ---
+        hwnd = user32.CreateWindowExW(
+            0, "MDBrowserTrayIcon", "MD Browser Tray",
+            0, 0, 0, 0, 0, None, None, hinst, None,
+        )
+        if not hwnd:
+            raise RuntimeError("CreateWindowExW failed")
+
+        # --- Add tray icon ---
+        hicon = user32.LoadIconW(None, IDI_APPLICATION)
+        nid = NOTIFYICONDATAW()
+        nid.cbSize = ctypes.sizeof(nid)
+        nid.hWnd = hwnd
+        nid.uID = TRAY_UID
+        nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+        nid.uCallbackMessage = WM_TRAYICON
+        nid.hIcon = hicon
+        nid.szTip = f"MD Browser — localhost:{chosen_port}"[:127]
+
+        if not shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid)):
+            raise RuntimeError("Shell_NotifyIconW (NIM_ADD) failed")
+
+        log("  |  Tray icon active — right-click → Exit to stop")
+        log("  +--------------------------------------+")
+
+        # --- Message loop ---
+        msg = MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
+        # --- Cleanup after message loop ends (tray Exit or WM_DESTROY) ---
+        nid_del = NOTIFYICONDATAW()
+        nid_del.cbSize = ctypes.sizeof(nid_del)
+        nid_del.hWnd = hwnd
+        nid_del.uID = TRAY_UID
+        shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid_del))
+
+    except Exception as e:
+        log(f"[WARN] Tray icon failed: {e}")
+        log("[INFO] Falling back to blocking server (Ctrl+C or kill to stop).")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            log("Shutting down...")
+        finally:
+            server.shutdown()
+        return
+
+    # Tray icon exited normally — shut down the HTTP server
+    server.shutdown()
+
+
 def main():
     parser = argparse.ArgumentParser(description='Markdown File Browser')
     parser.add_argument('directory', nargs='?', default=None,
@@ -700,9 +962,6 @@ def main():
         log("  |  Dir:  (select from browser UI)")
     log(f"  |  URL:  {url}")
     log("  +--------------------------------------+")
-    log("  |  Close this window or kill process to stop")
-    log("  +--------------------------------------+")
-    log("")
 
     # Auto-open browser after server is confirmed ready
     if not args.no_browser:
@@ -718,14 +977,15 @@ def main():
                     pass
         threading.Thread(target=open_browser_when_ready, daemon=True).start()
 
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        log("Shutting down...")
-        server.shutdown()
-    finally:
-        # Clean up the single-instance lock on exit
-        remove_lock()
+    # Run HTTP server in a daemon thread; main thread runs the tray icon
+    # message loop (or falls back to serve_forever on non-Windows / failure).
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    run_tray_icon(server, url, chosen_port)
+
+    # Cleanup on exit (tray Exit, Ctrl+C fallback, or API failure)
+    remove_lock()
 
 
 if __name__ == '__main__':
