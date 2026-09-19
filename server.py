@@ -152,8 +152,8 @@ def get_md_tree(base_dir, current_dir=None):
 
     for item in items:
         if item.is_dir():
-            # Skip hidden directories
-            if item.name.startswith('.'):
+            # Skip hidden and irrelevant directories
+            if item.name.startswith('.') or item.name in ('node_modules', 'venv', 'dist', '__pycache__'):
                 continue
             subdir = get_md_tree(base_dir, item)
             if subdir and (subdir["children"] or any(
